@@ -1,36 +1,63 @@
 import React, { useState } from 'react';
+import type { WorkflowRunResult } from '../types/workflowResult';
+import { buildCopyText, sectionHasContent } from '../lib/formatResult';
+import { copyReportText, downloadReport, shareReport } from '../lib/exportApi';
+import { ResultSectionCard } from './ResultSectionCard';
 
 interface ResultsViewerProps {
-  results: string;
+  run: WorkflowRunResult;
   onRestart: () => void;
 }
 
-export const ResultsViewer: React.FC<ResultsViewerProps> = ({ results, onRestart }) => {
+export const ResultsViewer: React.FC<ResultsViewerProps> = ({ run, onRestart }) => {
   const [copied, setCopied] = useState(false);
+  const [exporting, setExporting] = useState<'pdf' | 'docx' | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [exportHint, setExportHint] = useState<string | null>(null);
+
+  const resultRecord = run.result as Record<string, unknown>;
+  const visibleSections = run.sections.filter((section) =>
+    sectionHasContent(resultRecord[section.key], section.type)
+  );
+
+  const copyText = buildCopyText(run.workflow, resultRecord, run.sections, run.reply);
 
   const handleCopy = async () => {
+    const ok = await copyReportText(copyText);
+    setCopied(ok);
+    if (ok) setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleExport = async (format: 'pdf' | 'docx') => {
+    setExportError(null);
+    setExportHint(null);
+    setExporting(format);
     try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(results);
-      } else {
-        const textarea = document.createElement('textarea');
-        textarea.value = results;
-        textarea.style.position = 'fixed';
-        textarea.style.opacity = '0';
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textarea);
+      const result = await downloadReport(run, format);
+      if (result === 'shared') {
+        setExportHint('Отчёт отправлен через «Поделиться»');
+      } else if (result === 'opened') {
+        setExportHint('Отчёт открыт в новой вкладке — сохраните вручную');
+      } else if (result === 'failed') {
+        setExportError('Скачивание недоступно. Нажмите «Поделиться» или «Копировать».');
       }
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      setCopied(false);
+    } catch (e) {
+      setExportError(e instanceof Error ? e.message : 'Ошибка экспорта');
+    } finally {
+      setExporting(null);
     }
   };
 
+  const handleShare = async () => {
+    setExportError(null);
+    setExportHint(null);
+    const ok = await shareReport(copyText, `WorkflowGPT — ${run.workflow}`);
+    if (!ok) await handleCopy();
+    else setExportHint('Текст отчёта готов к отправке');
+  };
+
   return (
-    <section className="results-viewer">
+    <section className="results-viewer results-viewer--v2">
       <div className="results-hero glass-panel">
         <span className="results-hero__icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none">
@@ -45,22 +72,70 @@ export const ResultsViewer: React.FC<ResultsViewerProps> = ({ results, onRestart
           </svg>
         </span>
         <h2 className="results-hero__title">Анализ завершён</h2>
-        <p className="results-hero__desc">Результаты готовы к просмотру</p>
+        <p className="results-hero__desc">{run.workflow}</p>
+        {run.workflowSlug && (
+          <span className="results-hero__badge">{run.workflowSlug}</span>
+        )}
       </div>
 
-      <article className="results-card glass-card">
-        <div className="results-card__header">
-          <span className="results-card__label">Отчёт AI</span>
-          <button type="button" className="btn-ghost btn-ghost--sm" onClick={handleCopy}>
-            {copied ? 'Скопировано' : 'Копировать'}
+      <div className="results-sections-v2">
+        {visibleSections.map((section, index) => (
+          <ResultSectionCard
+            key={section.key}
+            index={index}
+            section={section}
+            value={resultRecord[section.key]}
+            defaultExpanded={index < 2}
+          />
+        ))}
+      </div>
+
+      {visibleSections.length === 0 && (
+        <article className="results-card glass-card">
+          <pre className="results-card__body">{run.reply}</pre>
+        </article>
+      )}
+
+      {exportError && (
+        <p className="results-export-error" role="alert">
+          {exportError}
+        </p>
+      )}
+      {exportHint && !exportError && (
+        <p className="results-export-hint" role="status">
+          {exportHint}
+        </p>
+      )}
+
+      <div className="results-sticky-bar glass-panel">
+        <div className="results-sticky-bar__actions">
+          <button
+            type="button"
+            className="btn-export"
+            disabled={!!exporting}
+            onClick={() => void handleExport('pdf')}
+          >
+            {exporting === 'pdf' ? 'PDF…' : 'PDF'}
+          </button>
+          <button
+            type="button"
+            className="btn-export"
+            disabled={!!exporting}
+            onClick={() => void handleExport('docx')}
+          >
+            {exporting === 'docx' ? 'DOCX…' : 'DOCX'}
+          </button>
+          <button type="button" className="btn-export btn-export--ghost" onClick={() => void handleCopy()}>
+            {copied ? '✓' : 'Копировать'}
+          </button>
+          <button type="button" className="btn-export btn-export--ghost" onClick={() => void handleShare()}>
+            Поделиться
           </button>
         </div>
-        <pre className="results-card__body">{results}</pre>
-      </article>
-
-      <button type="button" className="btn-primary btn-primary--outline" onClick={onRestart}>
-        Начать заново
-      </button>
+        <button type="button" className="btn-primary btn-primary--outline btn-restart" onClick={onRestart}>
+          Начать заново
+        </button>
+      </div>
     </section>
   );
 };

@@ -10,6 +10,7 @@ import {
   hapticSelection,
   isTelegramMiniApp,
   parseTelegramUser,
+  configureTelegramViewport,
   setupTelegramWebApp,
   telegramMainButton,
   type TelegramUser,
@@ -78,9 +79,17 @@ export const TelegramProvider: React.FC<TelegramProviderProps> = ({ children }) 
     if (!tg?.onEvent) return;
 
     const onThemeChanged = () => refreshTheme();
+    const onViewportChanged = () => {
+      configureTelegramViewport();
+      refreshTheme();
+    };
+
     tg.onEvent('themeChanged', onThemeChanged);
+    tg.onEvent('viewportChanged', onViewportChanged);
+
     return () => {
       tg.offEvent?.('themeChanged', onThemeChanged);
+      tg.offEvent?.('viewportChanged', onViewportChanged);
     };
   }, [isReady, refreshTheme]);
 

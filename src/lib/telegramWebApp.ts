@@ -71,13 +71,44 @@ export function applyTelegramTheme(): void {
   }
 }
 
+export function configureTelegramViewport(): void {
+  const tg = getTelegramWebApp();
+  if (!tg) return;
+
+  try {
+    tg.ready?.();
+    tg.expand?.();
+
+    if (typeof tg.disableVerticalSwipes === 'function') {
+      tg.disableVerticalSwipes();
+    }
+
+    if (typeof tg.enableClosingConfirmation === 'function') {
+      tg.enableClosingConfirmation();
+    }
+
+    const bg = tg.themeParams?.bg_color ?? '#0a0a0c';
+    tg.setHeaderColor?.(bg);
+    tg.setBackgroundColor?.(bg);
+
+    document.documentElement.classList.add('tg-mini-app');
+    document.body.classList.add('tg-mini-app');
+
+    const vh = tg.viewportStableHeight ?? tg.viewportHeight;
+    if (vh && vh > 0) {
+      document.documentElement.style.setProperty('--tg-viewport-height', `${vh}px`);
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 export function initTelegramWebApp(): boolean {
   const tg = getTelegramWebApp();
   if (!tg) return false;
 
   try {
-    tg.ready?.();
-    tg.expand?.();
+    configureTelegramViewport();
     applyTelegramTheme();
     return true;
   } catch {

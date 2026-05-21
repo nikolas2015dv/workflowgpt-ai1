@@ -31,8 +31,8 @@ const WORKFLOWS: WorkflowItem[] = [
   {
     id: 'data',
     title: 'Анализ данных',
-    description: 'Паттерны, инсайты и краткие выводы',
-    icon: '✨',
+    description: 'Метрики, инсайты и рекомендации для роста',
+    icon: '📈',
     accent: 'card-accent--cyan',
   },
 ];

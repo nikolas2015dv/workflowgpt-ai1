@@ -65,6 +65,17 @@ interface TelegramWebApp {
   HapticFeedback?: TelegramHapticFeedback;
   onEvent?: (eventType: string, callback: () => void) => void;
   offEvent?: (eventType: string, callback: () => void) => void;
+  openTelegramLink?: (url: string) => void;
+  disableVerticalSwipes?: () => void;
+  enableVerticalSwipes?: () => void;
+  enableClosingConfirmation?: () => void;
+  disableClosingConfirmation?: () => void;
+  setHeaderColor?: (color: string) => void;
+  setBackgroundColor?: (color: string) => void;
+  viewportHeight?: number;
+  viewportStableHeight?: number;
+  isExpanded?: boolean;
+  platform?: string;
 }
 
 interface TelegramNamespace {

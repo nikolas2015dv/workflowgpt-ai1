@@ -2,7 +2,9 @@ import React, { useState } from 'react';
 import { WorkflowGallery } from './components/WorkflowGallery';
 import { TaskExecutor } from './components/TaskExecutor';
 import { ResultsViewer } from './components/ResultsViewer';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { useTelegram } from './hooks/useTelegram';
+import type { WorkflowRunResult } from './types/workflowResult';
 
 type AppState = 'gallery' | 'executor' | 'results';
 
@@ -10,7 +12,7 @@ const App: React.FC = () => {
   const { user, isTelegram, isReady } = useTelegram();
   const [state, setState] = useState<AppState>('gallery');
   const [selectedWorkflow, setSelectedWorkflow] = useState<string | null>(null);
-  const [results, setResults] = useState<string | null>(null);
+  const [runResult, setRunResult] = useState<WorkflowRunResult | null>(null);
   const [screenKey, setScreenKey] = useState(0);
 
   const navigate = (next: AppState) => {
@@ -23,14 +25,14 @@ const App: React.FC = () => {
     navigate('executor');
   };
 
-  const handleCompleteTask = (fakeResults: string) => {
-    setResults(fakeResults);
+  const handleCompleteTask = (result: WorkflowRunResult) => {
+    setRunResult(result);
     navigate('results');
   };
 
   const handleRestart = () => {
     setSelectedWorkflow(null);
-    setResults(null);
+    setRunResult(null);
     navigate('gallery');
   };
 
@@ -48,10 +50,11 @@ const App: React.FC = () => {
 
   const avatarLetter = user.first_name.charAt(0).toUpperCase();
   const showMainButtonPad = isTelegram && state === 'executor';
+  const showResultsPad = state === 'results';
 
   return (
     <div
-      className={`app-shell${showMainButtonPad ? ' app-shell--main-button' : ''}`}
+      className={`app-shell${showMainButtonPad ? ' app-shell--main-button' : ''}${showResultsPad ? ' app-shell--results' : ''}${isTelegram ? ' app-shell--telegram' : ''}`}
     >
       <div className="app-bg" aria-hidden="true">
         <span className="app-bg-orb app-bg-orb--1" />
@@ -103,19 +106,21 @@ const App: React.FC = () => {
       </header>
 
       <main className="app-main">
-        <div key={screenKey} className="screen screen--enter">
-          {state === 'gallery' && <WorkflowGallery onSelect={handleSelectWorkflow} />}
-          {state === 'executor' && selectedWorkflow && (
-            <TaskExecutor
-              workflow={selectedWorkflow}
-              onComplete={handleCompleteTask}
-              onBack={handleBack}
-            />
-          )}
-          {state === 'results' && results && (
-            <ResultsViewer results={results} onRestart={handleRestart} />
-          )}
-        </div>
+        <ErrorBoundary onReset={handleRestart}>
+          <div key={screenKey} className="screen screen--enter">
+            {state === 'gallery' && <WorkflowGallery onSelect={handleSelectWorkflow} />}
+            {state === 'executor' && selectedWorkflow && (
+              <TaskExecutor
+                workflow={selectedWorkflow}
+                onComplete={handleCompleteTask}
+                onBack={handleBack}
+              />
+            )}
+            {state === 'results' && runResult && (
+              <ResultsViewer run={runResult} onRestart={handleRestart} />
+            )}
+          </div>
+        </ErrorBoundary>
       </main>
     </div>
   );

@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useEffect, useMemo, useState } from 'react';
+import { applyTelegramCacheRefresh } from '../lib/cacheBust';
 import {
   applyTelegramTheme,
   BROWSER_FALLBACK_USER,
@@ -55,6 +56,7 @@ export const TelegramProvider: React.FC<TelegramProviderProps> = ({ children }) 
       setUser(tgUser ?? BROWSER_FALLBACK_USER);
       setThemeParams(getTelegramWebApp()?.themeParams ?? null);
       applyTelegramTheme();
+      if (inTelegram) applyTelegramCacheRefresh();
       setIsReady(true);
     };
 

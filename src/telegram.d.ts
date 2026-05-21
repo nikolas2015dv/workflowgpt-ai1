@@ -76,6 +76,7 @@ interface TelegramWebApp {
   viewportStableHeight?: number;
   isExpanded?: boolean;
   platform?: string;
+  version?: string;
 }
 
 interface TelegramNamespace {

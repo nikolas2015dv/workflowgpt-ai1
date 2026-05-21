@@ -3,6 +3,7 @@ import { WorkflowGallery } from './components/WorkflowGallery';
 import { TaskExecutor } from './components/TaskExecutor';
 import { ResultsViewer } from './components/ResultsViewer';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { AppFooter } from './components/AppFooter';
 import { useTelegram } from './hooks/useTelegram';
 import type { WorkflowRunResult } from './types/workflowResult';
 
@@ -122,6 +123,8 @@ const App: React.FC = () => {
           </div>
         </ErrorBoundary>
       </main>
+
+      <AppFooter />
     </div>
   );
 };

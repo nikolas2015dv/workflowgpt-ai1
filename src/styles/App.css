@@ -79,6 +79,32 @@ body {
   padding-bottom: calc(72px + var(--safe-bottom));
 }
 
+.app-footer {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  margin: var(--space-md) var(--space-md) var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  font-size: 11px;
+  color: var(--tg-hint);
+  border-radius: var(--radius-md);
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--tg-separator);
+}
+
+.app-footer__brand {
+  font-weight: 600;
+  color: var(--tg-accent);
+}
+
+.app-footer__version {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
 .app-bg {
   position: fixed;
   inset: 0;

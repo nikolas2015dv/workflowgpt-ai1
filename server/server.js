@@ -9,88 +9,100 @@ const { resolveWorkflowForUpload, normalizeWorkflow, WORKFLOW_IDS } = require('.
 const { processTextRequest, processFileUpload } = require('./workflows/processor');
 const { WorkflowStepError, WorkflowValidationError, requireWorkflow } = require('./utils/validators');
 const { buildExport } = require('./services/exportService');
+const { createCorsOptions, parseAllowedOrigins } = require('./config/cors');
 
 dotenv.config({ path: path.join(__dirname, '.env') });
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
 const PORT = Number(process.env.PORT) || 3001;
+const HOST = process.env.HOST || '0.0.0.0';
+const NODE_ENV = process.env.NODE_ENV || 'development';
 const app = express();
 
-app.use(cors());
+app.set('trust proxy', 1);
+app.disable('x-powered-by');
+
+app.use(cors(createCorsOptions()));
+app.options('*', cors(createCorsOptions()));
 app.use(express.json({ limit: '4mb' }));
+
+function jsonError(res, status, error, message, extra = {}) {
+  return res.status(status).json({ ok: false, status: 'error', error, message, ...extra });
+}
+
+function jsonOk(res, payload) {
+  return res.json({ ok: true, status: 'ok', ...payload });
+}
 
 function handleOpenAiError(error, res) {
   if (error.message === 'OPENAI_API_KEY is not configured') {
-    return res.status(500).json({
-      error: 'Configuration Error',
-      message: 'OPENAI_API_KEY is not set on the server',
-    });
+    return jsonError(res, 500, 'Configuration Error', 'OPENAI_API_KEY is not set on the server');
   }
 
   const status = error.status ?? error.statusCode;
   if (typeof status === 'number' && status >= 400 && status < 600) {
-    return res.status(status).json({
-      error: 'OpenAI API Error',
-      message: error.message ?? 'Upstream AI request failed',
-    });
+    return jsonError(res, status, 'OpenAI API Error', error.message ?? 'Upstream AI request failed');
   }
 
-  return res.status(500).json({
-    error: 'Internal Server Error',
-    message: error.message ?? 'Failed to generate AI response',
-  });
+  return jsonError(res, 500, 'Internal Server Error', error.message ?? 'Failed to generate AI response');
 }
 
 function handleUploadMiddlewareError(error, res) {
   if (error instanceof multer.MulterError) {
     if (error.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({
-        error: 'Bad Request',
-        message: `Файл слишком большой. Максимум ${MAX_FILE_SIZE / (1024 * 1024)} МБ`,
-      });
+      return jsonError(
+        res,
+        400,
+        'Bad Request',
+        `Файл слишком большой. Максимум ${MAX_FILE_SIZE / (1024 * 1024)} МБ`
+      );
     }
-    return res.status(400).json({ error: 'Bad Request', message: error.message });
+    return jsonError(res, 400, 'Bad Request', error.message);
   }
 
   if (error.code === 'UNSUPPORTED_FORMAT') {
-    return res.status(400).json({ error: 'Unsupported Format', message: error.message });
+    return jsonError(res, 400, 'Unsupported Format', error.message);
   }
 
-  return res.status(400).json({
-    error: 'Bad Request',
-    message: error.message ?? 'Upload failed',
-  });
+  return jsonError(res, 400, 'Bad Request', error.message ?? 'Upload failed');
 }
 
 function handleProcessorError(error, res) {
   if (error instanceof WorkflowValidationError) {
-    return res.status(400).json({ error: error.code, message: error.message });
+    return jsonError(res, 400, error.code, error.message);
   }
   if (error instanceof WorkflowStepError) {
-    return res.status(500).json({
-      error: 'Workflow Step Error',
-      message: error.message,
-      stepId: error.stepId,
-    });
+    return jsonError(res, 500, 'Workflow Step Error', error.message, { stepId: error.stepId });
   }
   if (error instanceof ExtractTextError) {
-    return res.status(400).json({ error: error.code, message: error.message });
+    return jsonError(res, 400, error.code, error.message);
   }
   if (error.message?.includes('обязательно') || error.message?.includes('не поддерживает')) {
-    return res.status(400).json({ error: 'Bad Request', message: error.message });
+    return jsonError(res, 400, 'Bad Request', error.message);
   }
   if (error.message?.includes('timeout')) {
-    return res.status(504).json({ error: 'Timeout', message: error.message });
+    return jsonError(res, 504, 'Timeout', error.message);
   }
   return handleOpenAiError(error, res);
 }
 
 app.get('/api/health', (_req, res) => {
-  res.json({
-    status: 'ok',
+  jsonOk(res, {
     service: 'workflowgpt-api',
     engine: 'AI Workflow Engine 2.0',
+    environment: NODE_ENV,
+    uptimeSeconds: Math.floor(process.uptime()),
+    openaiConfigured: Boolean(process.env.OPENAI_API_KEY),
+    corsOrigins: parseAllowedOrigins(),
     workflows: Object.values(WORKFLOW_IDS),
+  });
+});
+
+app.get('/', (_req, res) => {
+  jsonOk(res, {
+    service: 'workflowgpt-api',
+    health: '/api/health',
+    docs: 'POST /api/test-ai, POST /api/workflow/upload',
   });
 });
 
@@ -99,10 +111,7 @@ app.post('/api/test-ai', async (req, res) => {
     const { message, workflow, metadata } = req.body ?? {};
 
     if (!workflow || typeof workflow !== 'string') {
-      return res.status(400).json({
-        error: 'Bad Request',
-        message: 'Field "workflow" is required',
-      });
+      return jsonError(res, 400, 'Bad Request', 'Field "workflow" is required');
     }
 
     let normalized;
@@ -118,7 +127,7 @@ app.post('/api/test-ai', async (req, res) => {
       metadata,
     });
 
-    return res.json({
+    return jsonOk(res, {
       reply: pipeline.reply,
       result: pipeline.result,
       workflow: pipeline.workflow,
@@ -137,12 +146,12 @@ app.post('/api/export/:format', async (req, res) => {
   try {
     const format = req.params.format?.toLowerCase();
     if (format !== 'pdf' && format !== 'docx') {
-      return res.status(400).json({ error: 'Bad Request', message: 'Use pdf or docx' });
+      return jsonError(res, 400, 'Bad Request', 'Use pdf or docx');
     }
 
     const { workflow, result, sections } = req.body ?? {};
     if (!workflow || !result) {
-      return res.status(400).json({ error: 'Bad Request', message: 'workflow and result required' });
+      return jsonError(res, 400, 'Bad Request', 'workflow and result required');
     }
 
     const buffer = await buildExport({ workflow, result, sections }, format);
@@ -157,19 +166,21 @@ app.post('/api/export/:format', async (req, res) => {
     return res.send(buffer);
   } catch (error) {
     console.error('[POST /api/export]', error);
-    return res.status(500).json({ error: 'Export Error', message: error.message });
+    return jsonError(res, 500, 'Export Error', error.message);
   }
 });
 
 app.post('/api/workflow/upload', (req, res) => {
   universalUpload.single('file')(req, res, async (uploadErr) => {
-    console.log('[POST /api/workflow/upload] req.body:', req.body);
-    console.log(
-      '[POST /api/workflow/upload] req.file:',
-      req.file
-        ? { originalname: req.file.originalname, size: req.file.size, mimetype: req.file.mimetype }
-        : null
-    );
+    if (NODE_ENV !== 'production') {
+      console.log('[POST /api/workflow/upload] req.body:', req.body);
+      console.log(
+        '[POST /api/workflow/upload] req.file:',
+        req.file
+          ? { originalname: req.file.originalname, size: req.file.size, mimetype: req.file.mimetype }
+          : null
+      );
+    }
 
     if (uploadErr) {
       console.error('[POST /api/workflow/upload] multer:', uploadErr);
@@ -184,17 +195,11 @@ app.post('/api/workflow/upload', (req, res) => {
         const hint = rawWorkflow
           ? `Invalid workflow for file upload: "${rawWorkflow}". Use: legal, competitors, analytics, or Russian workflow names.`
           : 'Field "workflow" is required in FormData (e.g. formData.append("workflow", selectedWorkflow)).';
-        return res.status(400).json({
-          error: 'Bad Request',
-          message: hint,
-        });
+        return jsonError(res, 400, 'Bad Request', hint);
       }
 
       if (!req.file) {
-        return res.status(400).json({
-          error: 'Bad Request',
-          message: 'Файл не передан. Поле формы: file',
-        });
+        return jsonError(res, 400, 'Bad Request', 'Файл не передан. Поле формы: file');
       }
 
       const note = typeof req.body?.message === 'string' ? req.body.message : req.body?.note ?? '';
@@ -207,7 +212,7 @@ app.post('/api/workflow/upload', (req, res) => {
         metadata,
       });
 
-      return res.json({
+      return jsonOk(res, {
         reply: pipeline.reply,
         result: pipeline.result,
         workflow: pipeline.workflow,
@@ -226,9 +231,6 @@ app.post('/api/workflow/upload', (req, res) => {
 
 app.post('/api/upload-contract', (req, res) => {
   universalUpload.single('file')(req, res, async (uploadErr) => {
-    console.log('[POST /api/upload-contract] req.body:', req.body);
-    console.log('[POST /api/upload-contract] req.file:', req.file?.originalname ?? null);
-
     if (uploadErr) return handleUploadMiddlewareError(uploadErr, res);
 
     try {
@@ -238,7 +240,7 @@ app.post('/api/upload-contract', (req, res) => {
         WORKFLOW_IDS.CONTRACT;
 
       if (!req.file) {
-        return res.status(400).json({ error: 'Bad Request', message: 'Файл не передан' });
+        return jsonError(res, 400, 'Bad Request', 'Файл не передан');
       }
 
       const note = typeof req.body?.note === 'string' ? req.body.note : req.body?.message ?? '';
@@ -248,7 +250,7 @@ app.post('/api/upload-contract', (req, res) => {
         note,
       });
 
-      return res.json({
+      return jsonOk(res, {
         reply: pipeline.reply,
         result: pipeline.result,
         workflow: pipeline.workflow,
@@ -266,14 +268,15 @@ app.post('/api/upload-contract', (req, res) => {
 });
 
 app.use((_req, res) => {
-  res.status(404).json({ error: 'Not Found', message: 'Route not found' });
+  jsonError(res, 404, 'Not Found', 'Route not found');
 });
 
 app.use((err, _req, res, _next) => {
   console.error('[Unhandled]', err);
-  res.status(500).json({ error: 'Internal Server Error', message: 'Unexpected server error' });
+  jsonError(res, 500, 'Internal Server Error', 'Unexpected server error');
 });
 
-app.listen(PORT, () => {
-  console.log(`WorkflowGPT API listening on http://localhost:${PORT}`);
+app.listen(PORT, HOST, () => {
+  console.log(`WorkflowGPT API listening on http://${HOST}:${PORT} (${NODE_ENV})`);
+  console.log(`CORS origins: ${parseAllowedOrigins().join(', ')}`);
 });

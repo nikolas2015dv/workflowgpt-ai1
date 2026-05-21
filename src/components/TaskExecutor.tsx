@@ -6,7 +6,7 @@ import {
   supportsFileUpload,
 } from '../config/workflows';
 import { getPipelineLoadingSteps } from '../config/pipelineSteps';
-import { requestAiReply, uploadWorkflowFile } from '../lib/api';
+import { ApiRequestError, requestAiReply, uploadWorkflowFile } from '../lib/api';
 import { logError, logUpload, logWorkflow } from '../lib/mobileDebug';
 import { WorkflowProgress } from './WorkflowProgress';
 import type { WorkflowRunResult } from '../types/workflowResult';
@@ -100,8 +100,11 @@ export const TaskExecutor: React.FC<TaskExecutorProps> = ({ workflow, onComplete
       onComplete({ ...run, workflow: run.workflow || workflow });
     } catch (err) {
       logError('workflow', err);
-      const message =
+      let message =
         err instanceof Error ? err.message : 'Не удалось выполнить анализ. Попробуйте снова.';
+      if (err instanceof ApiRequestError && err.code === 'config') {
+        message = `${message} Настройте VITE_API_URL в Vercel.`;
+      }
       setError(message);
       hapticNotification('error');
       setLoading(false);

@@ -1,8 +1,7 @@
 import type { WorkflowRunResult } from '../types/workflowResult';
+import { apiUrl, ApiRequestError, mapFetchError } from './api';
 import { logError, logMobile } from './mobileDebug';
 import { getTelegramWebApp } from './telegramWebApp';
-
-const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3001';
 
 function triggerAnchorDownload(blob: Blob, filename: string): boolean {
   try {
@@ -63,20 +62,27 @@ export async function downloadReport(
   const filename = `workflowgpt-report.${format}`;
   logMobile('export start', format);
 
-  const response = await fetch(`${API_BASE}/api/export/${format}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      workflow: run.workflow,
-      result: run.result,
-      sections: run.sections,
-    }),
-  });
+  let response: Response;
+  try {
+    response = await fetch(apiUrl(`/api/export/${format}`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        workflow: run.workflow,
+        result: run.result,
+        sections: run.sections,
+      }),
+    });
+  } catch (e) {
+    throw mapFetchError(e);
+  }
 
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
-    throw new Error(
-      (err as { message?: string }).message ?? `Ошибка экспорта (${response.status})`
+    throw new ApiRequestError(
+      (err as { message?: string }).message ?? `Ошибка экспорта (${response.status})`,
+      response.status,
+      'backend'
     );
   }
 

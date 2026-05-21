@@ -1,0 +1,19 @@
+# Render.com — Web Service for WorkflowGPT API
+# Docs: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: workflowgpt-api
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false
+      - key: FRONTEND_URL
+        sync: false

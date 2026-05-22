@@ -6,6 +6,7 @@ import {
   supportsFileUpload,
 } from '../config/workflows';
 import { getPipelineLoadingSteps } from '../config/pipelineSteps';
+import { getEstimatedDurationMs } from '../config/workflowEngine';
 import { ApiRequestError, requestAiReply, uploadWorkflowFile } from '../lib/api';
 import { logError, logUpload, logWorkflow } from '../lib/mobileDebug';
 import { WorkflowProgress } from './WorkflowProgress';
@@ -129,7 +130,7 @@ export const TaskExecutor: React.FC<TaskExecutorProps> = ({ workflow, onComplete
 
     const frame = (now: number) => {
       const elapsed = now - start;
-      const duration = Math.max(loadingSteps.length * 3500, 14000);
+      const duration = Math.max(getEstimatedDurationMs(workflow), loadingSteps.length * 3500);
       const pct = Math.min(PROGRESS_CAP, (elapsed / duration) * PROGRESS_CAP);
       setProgress(pct);
       setLoadingStep(
@@ -165,11 +166,17 @@ export const TaskExecutor: React.FC<TaskExecutorProps> = ({ workflow, onComplete
             </div>
             <div>
               <h2 className="loading-panel__title">AI Workflow Engine</h2>
-              <p className="loading-panel__subtitle">Выполняем шаги pipeline…</p>
+              <p className="loading-panel__subtitle">
+                {loadingSteps[loadingStep] ?? 'Выполняем шаги pipeline…'}
+              </p>
             </div>
           </div>
 
-          <WorkflowProgress steps={loadingSteps} activeIndex={loadingStep} />
+          <WorkflowProgress
+            steps={loadingSteps}
+            activeIndex={loadingStep}
+            activeLabel={loadingSteps[loadingStep]}
+          />
 
           <div className="progress-bar">
             <span className="progress-bar__fill" style={{ width: `${progress}%` }} />

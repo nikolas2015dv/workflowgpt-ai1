@@ -121,6 +121,21 @@ async function createJsonCompletion({ systemPrompt, userPrompt, schemaHint, fall
 }
 
 /**
+ * Markdown stage output (context passed to next stages).
+ * @param {{ systemPrompt: string; userPrompt: string; maxTokens?: number }} params
+ */
+async function createMarkdownCompletion({ systemPrompt, userPrompt, maxTokens = 1600 }) {
+  const content = await createCompletion({
+    systemPrompt,
+    userPrompt: `${userPrompt}\n\nВерни структурированный Markdown (заголовки ##, списки).`,
+    maxTokens,
+    temperature: 0.5,
+    jsonMode: false,
+  });
+  return content.trim();
+}
+
+/**
  * @param {Buffer} imageBuffer
  * @param {string} mimeType
  * @param {string} [note]
@@ -157,8 +172,11 @@ module.exports = {
   getClient,
   createCompletion,
   createJsonCompletion,
+  createMarkdownCompletion,
   extractLegalDocumentText,
   MODEL,
   VISION_MODEL,
   DEFAULT_TEMPERATURE,
+  DEFAULT_TIMEOUT_MS,
+  MAX_RETRIES,
 };

@@ -78,6 +78,13 @@ export const ResultsViewer: React.FC<ResultsViewerProps> = ({ run, onRestart }) 
         )}
       </div>
 
+      {run.report && (
+        <article className="results-report glass-card">
+          <h3 className="results-report__title">Итоговый отчёт</h3>
+          <pre className="results-report__body">{run.report}</pre>
+        </article>
+      )}
+
       <div className="results-sections-v2">
         {visibleSections.map((section, index) => (
           <ResultSectionCard

@@ -44,12 +44,22 @@ export type WorkflowStructuredResult =
   | AnalyticsResult
   | (Record<string, unknown> & { workflow?: string });
 
+export interface WorkflowProgressDto {
+  currentStage: number;
+  totalStages: number;
+  stageName: string;
+  progress: number;
+}
+
 export interface WorkflowRunResult {
   workflow: string;
   workflowSlug?: string;
   result: WorkflowStructuredResult;
   reply: string;
+  report?: string;
   sections: ResultSectionConfig[];
   steps?: string[];
   stepIds?: string[];
+  progress?: WorkflowProgressDto;
+  engineVersion?: string;
 }

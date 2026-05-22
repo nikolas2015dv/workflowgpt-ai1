@@ -5,6 +5,7 @@ export type StepStatus = 'done' | 'active' | 'pending';
 interface WorkflowProgressProps {
   steps: string[];
   activeIndex: number;
+  activeLabel?: string;
 }
 
 function getStatus(index: number, activeIndex: number): StepStatus {
@@ -13,8 +14,18 @@ function getStatus(index: number, activeIndex: number): StepStatus {
   return 'pending';
 }
 
-export const WorkflowProgress: React.FC<WorkflowProgressProps> = ({ steps, activeIndex }) => {
+export const WorkflowProgress: React.FC<WorkflowProgressProps> = ({
+  steps,
+  activeIndex,
+  activeLabel,
+}) => {
   return (
+    <div className="workflow-progress-wrap">
+      {activeLabel && (
+        <p className="workflow-progress__active-hint" aria-live="polite">
+          {activeLabel}
+        </p>
+      )}
     <ul className="workflow-progress" aria-label="Прогресс workflow">
       {steps.map((label, index) => {
         const status = getStatus(index, activeIndex);
@@ -44,5 +55,6 @@ export const WorkflowProgress: React.FC<WorkflowProgressProps> = ({ steps, activ
         );
       })}
     </ul>
+    </div>
   );
 };

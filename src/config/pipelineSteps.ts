@@ -1,42 +1,14 @@
 import { WORKFLOW_IDS } from './workflows';
+import { getEngineLoadingSteps } from './workflowEngine';
 import type { ResultSectionConfig } from '../types/workflowResult';
 
+/** @deprecated use getEngineLoadingSteps from workflowEngine.ts */
 export const PIPELINE_LOADING_STEPS: Record<string, string[]> = {
-  [WORKFLOW_IDS.COMPETITORS]: [
-    'Определяем нишу',
-    'Делаем SWOT-анализ',
-    'Ищем преимущества',
-    'Формируем оффер',
-    'Генерируем рекомендации',
-  ],
-  [WORKFLOW_IDS.CONTRACT]: [
-    'Разбираем документ',
-    'Составляем резюме',
-    'Выявляем риски',
-    'Ищем красные флаги',
-    'Формируем рекомендации',
-  ],
-  contractFile: [
-    'Загружаем файл',
-    'Разбираем документ',
-    'Выявляем риски',
-    'Ищем красные флаги',
-    'Формируем рекомендации',
-  ],
-  contractVision: [
-    'Обрабатываем изображение',
-    'Извлекаем текст',
-    'Выявляем риски',
-    'Ищем красные флаги',
-    'Формируем рекомендации',
-  ],
-  [WORKFLOW_IDS.DATA]: [
-    'Разбираем данные',
-    'Ищем закономерности',
-    'Проверяем аномалии',
-    'Формируем инсайты',
-    'Готовим рекомендации',
-  ],
+  [WORKFLOW_IDS.COMPETITORS]: getEngineLoadingSteps(WORKFLOW_IDS.COMPETITORS, null),
+  [WORKFLOW_IDS.CONTRACT]: getEngineLoadingSteps(WORKFLOW_IDS.CONTRACT, null),
+  contractFile: getEngineLoadingSteps(WORKFLOW_IDS.CONTRACT, { name: 'doc.pdf' } as File),
+  contractVision: getEngineLoadingSteps(WORKFLOW_IDS.CONTRACT, { name: 'scan.jpg' } as File),
+  [WORKFLOW_IDS.DATA]: getEngineLoadingSteps(WORKFLOW_IDS.DATA, null),
 };
 
 export const RESULT_SECTIONS: Record<string, ResultSectionConfig[]> = {
@@ -62,10 +34,5 @@ export const RESULT_SECTIONS: Record<string, ResultSectionConfig[]> = {
 };
 
 export function getPipelineLoadingSteps(workflow: string, file: File | null): string[] {
-  if (workflow === WORKFLOW_IDS.CONTRACT && file) {
-    const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
-    const isImage = ['.jpg', '.jpeg', '.png'].includes(ext);
-    return isImage ? PIPELINE_LOADING_STEPS.contractVision : PIPELINE_LOADING_STEPS.contractFile;
-  }
-  return PIPELINE_LOADING_STEPS[workflow] ?? ['Подготовка', 'Анализ', 'Формирование отчёта'];
+  return getEngineLoadingSteps(workflow, file);
 }

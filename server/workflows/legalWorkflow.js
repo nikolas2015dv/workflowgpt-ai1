@@ -1,18 +1,19 @@
 const { STEP_PROMPTS } = require('../utils/prompts');
-const { createJsonCompletion, extractLegalDocumentText } = require('../services/openaiService');
+const { createJsonCompletion, createMarkdownCompletion, extractLegalDocumentText } = require('../services/openaiService');
+const { buildFinalReport } = require('../utils/reportBuilder');
+const { getWorkflowMetadata } = require('./metadata');
+const { runWorkflowPipeline } = require('./workflowRunner');
+const { WORKFLOW_IDS } = require('./config');
 const {
   appendBlocks,
   truncateText,
   ensureStringArray,
 } = require('../services/parserService');
 
-/**
- * @param {{ documentText?: string; imageBuffer?: Buffer; mimeType?: string; note?: string }} input
- */
-async function parseDocument(input) {
+async function documentParsing(input) {
   if (input.imageBuffer && input.mimeType) {
     const text = await extractLegalDocumentText(input.imageBuffer, input.mimeType, input.note ?? '');
-    return { documentText: text };
+    return { documentText: text, summary: text.slice(0, 1500) };
   }
 
   const doc = truncateText(input.documentText ?? '');
@@ -26,67 +27,67 @@ async function parseDocument(input) {
     fallback: { structuredText: doc },
   });
 
-  return { documentText: String(data.structuredText ?? doc).trim() };
-}
-
-/**
- * @param {string} documentText
- */
-async function summarizeContract(documentText) {
-  const { schema, system } = STEP_PROMPTS.legal.summarizeContract;
-  const data = await createJsonCompletion({
-    systemPrompt: system,
+  const documentText = String(data.structuredText ?? doc).trim();
+  const { schema: sumSchema, system: sumSystem } = STEP_PROMPTS.legal.summarizeContract;
+  const summaryData = await createJsonCompletion({
+    systemPrompt: sumSystem,
     userPrompt: `Документ:\n${truncateText(documentText)}`,
-    schemaHint: schema,
+    schemaHint: sumSchema,
     fallback: { summary: '' },
   });
-  return { summary: String(data.summary ?? '').trim() };
+
+  const summary = String(summaryData.summary ?? '').trim();
+  const stageMarkdown = await createMarkdownCompletion({
+    systemPrompt: sumSystem,
+    userPrompt: appendBlocks([`Документ (фрагмент):\n${truncateText(documentText, 6000)}`, `Резюме:\n${summary}`]),
+  });
+
+  return { documentText, summary, stageMarkdown_parse: stageMarkdown };
 }
 
-/**
- * @param {string} documentText
- * @param {string} summary
- */
-async function identifyRisks(documentText, summary) {
+async function legalRiskDetection(documentText, summary, prevMarkdown) {
   const { schema, system } = STEP_PROMPTS.legal.identifyRisks;
   const data = await createJsonCompletion({
     systemPrompt: system,
     userPrompt: appendBlocks([
       `Документ:\n${truncateText(documentText)}`,
       `Резюме:\n${summary}`,
-      'Перечисли юридические риски и последствия.',
+      prevMarkdown,
+      'Юридические риски и последствия.',
     ]),
     schemaHint: schema,
     fallback: { risks: [] },
   });
-  return { risks: ensureStringArray(data.risks) };
+  const risks = ensureStringArray(data.risks);
+  const stageMarkdown = await createMarkdownCompletion({
+    systemPrompt: system,
+    userPrompt: appendBlocks([`Риски:\n${risks.map((r) => `• ${r}`).join('\n')}`]),
+  });
+  return { risks, stageMarkdown_risks: stageMarkdown };
 }
 
-/**
- * @param {string} documentText
- * @param {string[]} risks
- */
-async function detectRedFlags(documentText, risks) {
+async function redFlagsStage(documentText, risks, prevMarkdown) {
   const { schema, system } = STEP_PROMPTS.legal.detectRedFlags;
   const data = await createJsonCompletion({
     systemPrompt: system,
     userPrompt: appendBlocks([
       `Документ:\n${truncateText(documentText)}`,
       `Риски:\n${risks.map((r) => `• ${r}`).join('\n')}`,
-      'Выяви красные флаги.',
+      prevMarkdown,
+      'Красные флаги.',
     ]),
     schemaHint: schema,
     fallback: { redFlags: [] },
   });
-  return { redFlags: ensureStringArray(data.redFlags) };
+  const redFlags = ensureStringArray(data.redFlags);
+  const stageMarkdown = await createMarkdownCompletion({
+    systemPrompt: system,
+    userPrompt: appendBlocks([`Красные флаги:\n${redFlags.map((r) => `• ${r}`).join('\n')}`]),
+  });
+  return { redFlags, stageMarkdown_redFlags: stageMarkdown };
 }
 
-/**
- * @param {string} summary
- * @param {string[]} risks
- * @param {string[]} redFlags
- */
-async function generateRecommendations(summary, risks, redFlags) {
+async function recommendationsStage(summary, risks, redFlags, prevMarkdown) {
   const { schema, system } = STEP_PROMPTS.legal.generateRecommendations;
   const data = await createJsonCompletion({
     systemPrompt: system,
@@ -94,61 +95,108 @@ async function generateRecommendations(summary, risks, redFlags) {
       `Резюме:\n${summary}`,
       `Риски:\n${risks.map((r) => `• ${r}`).join('\n')}`,
       `Красные флаги:\n${redFlags.map((r) => `• ${r}`).join('\n')}`,
+      prevMarkdown,
       'Рекомендации по договору.',
     ]),
     schemaHint: schema,
     fallback: { recommendations: [] },
   });
-  return { recommendations: ensureStringArray(data.recommendations) };
+  const recommendations = ensureStringArray(data.recommendations);
+  const stageMarkdown = await createMarkdownCompletion({
+    systemPrompt: system,
+    userPrompt: appendBlocks([`Рекомендации:\n${recommendations.map((r) => `• ${r}`).join('\n')}`]),
+  });
+  return { recommendations, stageMarkdown_recommendations: stageMarkdown };
 }
 
-const PIPELINE_STEPS = [
-  { id: 'parse_document', label: 'Разбираем документ...' },
-  { id: 'summarize_contract', label: 'Составляем резюме...' },
-  { id: 'identify_risks', label: 'Выявляем риски...' },
-  { id: 'detect_red_flags', label: 'Ищем красные флаги...' },
-  { id: 'generate_recommendations', label: 'Формируем рекомендации...' },
-];
+function buildStages(workflowInput) {
+  let chain = '';
+
+  return [
+    {
+      id: 'document_parsing',
+      name: 'Document Parsing',
+      label: 'Разбираем документ...',
+      run: async () => {
+        const out = await documentParsing(workflowInput);
+        chain = out.stageMarkdown_parse ?? '';
+        return out;
+      },
+    },
+    {
+      id: 'legal_risk_detection',
+      name: 'Legal Risk Detection',
+      label: 'Выявляем риски...',
+      run: async (ctx) => {
+        const out = await legalRiskDetection(ctx.state.documentText, ctx.state.summary, chain);
+        chain = out.stageMarkdown_risks ?? chain;
+        return out;
+      },
+    },
+    {
+      id: 'red_flags',
+      name: 'Red Flags',
+      label: 'Ищем красные флаги...',
+      run: async (ctx) => {
+        const out = await redFlagsStage(ctx.state.documentText, ctx.state.risks, chain);
+        chain = out.stageMarkdown_redFlags ?? chain;
+        return out;
+      },
+    },
+    {
+      id: 'recommendations',
+      name: 'Recommendations',
+      label: 'Формируем рекомендации...',
+      run: async (ctx) => {
+        const out = await recommendationsStage(
+          ctx.state.summary,
+          ctx.state.risks,
+          ctx.state.redFlags,
+          chain
+        );
+        chain = out.stageMarkdown_recommendations ?? chain;
+        return out;
+      },
+    },
+    {
+      id: 'final_report',
+      name: 'Final Legal Report',
+      label: 'Собираем юридический отчёт...',
+      run: async (ctx) => {
+        const report = await buildFinalReport('legal', ctx.state);
+        return { report, stageMarkdown_final: report };
+      },
+    },
+  ];
+}
+
+const PIPELINE_STEPS = getWorkflowMetadata(WORKFLOW_IDS.CONTRACT).stages.map((s) => ({
+  id: s.id,
+  label: s.label,
+}));
 
 /**
  * @param {object} input
- * @param {Function} [runStep]
  */
-async function runLegalWorkflow(input, runStep) {
-  const exec = runStep ?? (async (_id, _label, fn) => fn());
+async function runLegalWorkflow(input) {
   const note = input.note ?? '';
+  const workflowInput = {
+    documentText: input.documentText ?? input.message ?? '',
+    imageBuffer: input.imageBuffer,
+    mimeType: input.mimeType,
+    note,
+  };
 
-  const { documentText } = await exec('parse_document', PIPELINE_STEPS[0].label, () =>
-    parseDocument({
-      documentText: input.documentText ?? input.message ?? '',
-      imageBuffer: input.imageBuffer,
-      mimeType: input.mimeType,
-      note,
-    })
+  const { result } = await runWorkflowPipeline(
+    WORKFLOW_IDS.CONTRACT,
+    buildStages(workflowInput),
+    input
   );
-
-  const { summary } = await exec('summarize_contract', PIPELINE_STEPS[1].label, () =>
-    summarizeContract(documentText)
-  );
-  const { risks } = await exec('identify_risks', PIPELINE_STEPS[2].label, () =>
-    identifyRisks(documentText, summary)
-  );
-  const { redFlags } = await exec('detect_red_flags', PIPELINE_STEPS[3].label, () =>
-    detectRedFlags(documentText, risks)
-  );
-  const { recommendations } = await exec('generate_recommendations', PIPELINE_STEPS[4].label, () =>
-    generateRecommendations(summary, risks, redFlags)
-  );
-
-  return { summary, risks, redFlags, recommendations };
+  result.workflow = 'legal';
+  return result;
 }
 
 module.exports = {
   runLegalWorkflow,
   PIPELINE_STEPS,
-  parseDocument,
-  summarizeContract,
-  identifyRisks,
-  detectRedFlags,
-  generateRecommendations,
 };

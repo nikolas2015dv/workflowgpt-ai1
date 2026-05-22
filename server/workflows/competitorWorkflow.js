@@ -1,5 +1,9 @@
 const { STEP_PROMPTS } = require('../utils/prompts');
-const { createJsonCompletion } = require('../services/openaiService');
+const { createJsonCompletion, createMarkdownCompletion } = require('../services/openaiService');
+const { buildFinalReport } = require('../utils/reportBuilder');
+const { getWorkflowMetadata } = require('./metadata');
+const { runWorkflowPipeline } = require('./workflowRunner');
+const { WORKFLOW_IDS } = require('./config');
 const {
   buildCompetitorContext,
   appendBlocks,
@@ -7,41 +11,39 @@ const {
   ensureSwot,
 } = require('../services/parserService');
 
-/**
- * @param {string} context
- */
-async function detectNiche(context) {
+async function marketResearch(context) {
   const { schema, system } = STEP_PROMPTS.competitors.detectNiche;
   const data = await createJsonCompletion({
     systemPrompt: system,
-    userPrompt: `${context}\n\nОпредели нишу бизнеса по названию, описанию, ссылкам и username.`,
+    userPrompt: `${context}\n\nИсследование рынка: определи нишу, сегмент и контекст.`,
     schemaHint: schema,
     fallback: { niche: '' },
   });
-  return { niche: String(data.niche ?? data._raw ?? '').trim() };
+  const niche = String(data.niche ?? '').trim();
+  const stageMarkdown = await createMarkdownCompletion({
+    systemPrompt: STEP_PROMPTS.competitors.detectNiche.system,
+    userPrompt: appendBlocks([context, `Ниша: ${niche}`, 'Краткий markdown: рынок, сегмент, гипотезы.']),
+  });
+  return { niche, stageMarkdown_market: stageMarkdown };
 }
 
-/**
- * @param {string} context
- * @param {string} niche
- */
-async function generateSWOT(context, niche) {
+async function swotAnalysis(context, niche, prevMarkdown) {
   const { schema, system } = STEP_PROMPTS.competitors.generateSWOT;
   const data = await createJsonCompletion({
     systemPrompt: system,
-    userPrompt: appendBlocks([context, `Ниша:\n${niche}`, 'Построй SWOT-анализ конкурента.']),
+    userPrompt: appendBlocks([context, `Ниша:\n${niche}`, prevMarkdown, 'SWOT-анализ.']),
     schemaHint: schema,
     fallback: { swot: ensureSwot(null) },
   });
-  return { swot: ensureSwot(data.swot) };
+  const swot = ensureSwot(data.swot);
+  const stageMarkdown = await createMarkdownCompletion({
+    systemPrompt: system,
+    userPrompt: appendBlocks([`Ниша: ${niche}`, `SWOT JSON:\n${JSON.stringify(swot)}`, 'Markdown SWOT.']),
+  });
+  return { swot, stageMarkdown_swot: stageMarkdown };
 }
 
-/**
- * @param {string} context
- * @param {string} niche
- * @param {object} swot
- */
-async function identifyAdvantages(context, niche, swot) {
+async function competitorAdvantages(context, niche, swot, prevMarkdown) {
   const { schema, system } = STEP_PROMPTS.competitors.identifyAdvantages;
   const data = await createJsonCompletion({
     systemPrompt: system,
@@ -49,20 +51,21 @@ async function identifyAdvantages(context, niche, swot) {
       context,
       `Ниша:\n${niche}`,
       `SWOT:\n${JSON.stringify(swot, null, 2)}`,
-      'Определи преимущества, слабые места и точки дифференциации.',
+      prevMarkdown,
+      'Преимущества и дифференциация.',
     ]),
     schemaHint: schema,
     fallback: { advantages: [] },
   });
-  return { advantages: ensureStringArray(data.advantages) };
+  const advantages = ensureStringArray(data.advantages);
+  const stageMarkdown = await createMarkdownCompletion({
+    systemPrompt: system,
+    userPrompt: appendBlocks([`Преимущества:\n${advantages.map((a) => `• ${a}`).join('\n')}`]),
+  });
+  return { advantages, stageMarkdown_advantages: stageMarkdown };
 }
 
-/**
- * @param {string} context
- * @param {string} niche
- * @param {string[]} advantages
- */
-async function generateOffer(context, niche, advantages) {
+async function offerGeneration(context, niche, advantages, prevMarkdown) {
   const { schema, system } = STEP_PROMPTS.competitors.generateOffer;
   const data = await createJsonCompletion({
     systemPrompt: system,
@@ -70,70 +73,122 @@ async function generateOffer(context, niche, advantages) {
       context,
       `Ниша:\n${niche}`,
       `Преимущества:\n${advantages.map((a) => `• ${a}`).join('\n')}`,
-      'Сформируй оффер, позиционирование и УТП.',
+      prevMarkdown,
+      'Оффер и УТП.',
     ]),
     schemaHint: schema,
     fallback: { offer: '' },
   });
-  return { offer: String(data.offer ?? '').trim() };
+  const offer = String(data.offer ?? '').trim();
+  const stageMarkdown = await createMarkdownCompletion({
+    systemPrompt: system,
+    userPrompt: appendBlocks([`Оффер:\n${offer}`]),
+  });
+  return { offer, stageMarkdown_offer: stageMarkdown };
 }
 
-/**
- * @param {string} context
- * @param {string} offer
- */
-async function generateRecommendations(context, offer) {
+async function recommendationsStage(context, offer, prevMarkdown) {
   const { schema, system } = STEP_PROMPTS.competitors.generateRecommendations;
   const data = await createJsonCompletion({
     systemPrompt: system,
-    userPrompt: appendBlocks([
-      context,
-      `Оффер:\n${offer}`,
-      'Дай рекомендации, growth ideas и улучшения маркетинга.',
-    ]),
+    userPrompt: appendBlocks([context, `Оффер:\n${offer}`, prevMarkdown, 'Рекомендации и growth.']),
     schemaHint: schema,
     fallback: { recommendations: [] },
   });
-  return { recommendations: ensureStringArray(data.recommendations) };
+  const recommendations = ensureStringArray(data.recommendations);
+  const stageMarkdown = await createMarkdownCompletion({
+    systemPrompt: system,
+    userPrompt: appendBlocks([`Рекомендации:\n${recommendations.map((r) => `• ${r}`).join('\n')}`]),
+  });
+  return { recommendations, stageMarkdown_recommendations: stageMarkdown };
 }
 
-const PIPELINE_STEPS = [
-  { id: 'detect_niche', label: 'Определяем нишу...' },
-  { id: 'generate_swot', label: 'Делаем SWOT-анализ...' },
-  { id: 'identify_advantages', label: 'Ищем преимущества...' },
-  { id: 'generate_offer', label: 'Формируем оффер...' },
-  { id: 'generate_recommendations', label: 'Готовим рекомендации...' },
-];
+function buildStages(context) {
+  let chain = '';
+
+  return [
+    {
+      id: 'market_research',
+      name: 'Market Research',
+      label: 'Исследуем рынок...',
+      run: async (ctx) => {
+        const out = await marketResearch(context);
+        chain = out.stageMarkdown_market ?? '';
+        return out;
+      },
+    },
+    {
+      id: 'swot_analysis',
+      name: 'SWOT Analysis',
+      label: 'SWOT-анализ...',
+      run: async (ctx) => {
+        const out = await swotAnalysis(context, ctx.state.niche, chain);
+        chain = out.stageMarkdown_swot ?? chain;
+        return out;
+      },
+    },
+    {
+      id: 'competitor_advantages',
+      name: 'Competitor Advantages',
+      label: 'Анализируем конкурентов...',
+      run: async (ctx) => {
+        const out = await competitorAdvantages(context, ctx.state.niche, ctx.state.swot, chain);
+        chain = out.stageMarkdown_advantages ?? chain;
+        return out;
+      },
+    },
+    {
+      id: 'offer_generation',
+      name: 'Offer Generation',
+      label: 'Формируем оффер...',
+      run: async (ctx) => {
+        const out = await offerGeneration(context, ctx.state.niche, ctx.state.advantages, chain);
+        chain = out.stageMarkdown_offer ?? chain;
+        return out;
+      },
+    },
+    {
+      id: 'recommendations',
+      name: 'Recommendations',
+      label: 'Готовим рекомендации...',
+      run: async (ctx) => {
+        const out = await recommendationsStage(context, ctx.state.offer, chain);
+        chain = out.stageMarkdown_recommendations ?? chain;
+        return out;
+      },
+    },
+    {
+      id: 'final_report',
+      name: 'Final Report',
+      label: 'Формируем отчёт...',
+      run: async (ctx) => {
+        const report = await buildFinalReport('competitors', ctx.state);
+        return { report, stageMarkdown_final: report };
+      },
+    },
+  ];
+}
+
+const PIPELINE_STEPS = getWorkflowMetadata(WORKFLOW_IDS.COMPETITORS).stages.map((s) => ({
+  id: s.id,
+  label: s.label,
+}));
 
 /**
  * @param {{ message?: string; metadata?: object }} input
- * @param {typeof import('../services/workflowEngine').runStep} [runStep]
  */
-async function runCompetitorWorkflow(input, runStep) {
-  const exec = runStep ?? (async (_id, _label, fn) => fn());
+async function runCompetitorWorkflow(input) {
   const context = buildCompetitorContext(input.message ?? '', input.metadata ?? {});
-
-  const { niche } = await exec('detect_niche', PIPELINE_STEPS[0].label, () => detectNiche(context));
-  const { swot } = await exec('generate_swot', PIPELINE_STEPS[1].label, () => generateSWOT(context, niche));
-  const { advantages } = await exec('identify_advantages', PIPELINE_STEPS[2].label, () =>
-    identifyAdvantages(context, niche, swot)
+  const { result } = await runWorkflowPipeline(
+    WORKFLOW_IDS.COMPETITORS,
+    buildStages(context),
+    input
   );
-  const { offer } = await exec('generate_offer', PIPELINE_STEPS[3].label, () =>
-    generateOffer(context, niche, advantages)
-  );
-  const { recommendations } = await exec('generate_recommendations', PIPELINE_STEPS[4].label, () =>
-    generateRecommendations(context, offer)
-  );
-
-  return { niche, swot, advantages, offer, recommendations };
+  result.workflow = 'competitors';
+  return result;
 }
 
 module.exports = {
   runCompetitorWorkflow,
   PIPELINE_STEPS,
-  detectNiche,
-  generateSWOT,
-  identifyAdvantages,
-  generateOffer,
-  generateRecommendations,
 };

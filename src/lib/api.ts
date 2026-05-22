@@ -14,12 +14,20 @@ export interface WorkflowSectionDto extends ResultSectionConfig {}
 
 interface WorkflowApiResponse {
   reply?: string;
+  report?: string;
   result?: Record<string, unknown>;
   workflow?: string;
   workflowSlug?: string;
   steps?: string[];
   stepIds?: string[];
   sections?: WorkflowSectionDto[];
+  progress?: {
+    currentStage: number;
+    totalStages: number;
+    stageName: string;
+    progress: number;
+  };
+  engineVersion?: string;
   filename?: string;
   error?: string;
   message?: string;
@@ -95,19 +103,26 @@ function toWorkflowRunResult(data: WorkflowApiResponse, response: Response): Wor
     throw new ApiRequestError('Сервер вернул пустой ответ', response.status, 'backend');
   }
 
-  const reply =
-    typeof data.reply === 'string' && data.reply.trim()
-      ? data.reply.trim()
-      : buildCopyText(workflow, result as Record<string, unknown>, sections, '');
+  const reportText =
+    typeof data.report === 'string' && data.report.trim()
+      ? data.report.trim()
+      : typeof data.reply === 'string' && data.reply.trim()
+        ? data.reply.trim()
+        : '';
+
+  const reply = reportText || buildCopyText(workflow, result as Record<string, unknown>, sections, '');
 
   return {
     workflow,
     workflowSlug: data.workflowSlug,
     result,
     reply,
+    report: reportText || undefined,
     sections,
     steps: data.steps,
     stepIds: data.stepIds,
+    progress: data.progress,
+    engineVersion: data.engineVersion,
   };
 }
 

@@ -1,10 +1,10 @@
 const { WORKFLOW_IDS } = require('../workflows/config');
-const { WorkflowStepError } = require('../utils/validators');
 const {
   getWorkflowSlug,
   getSectionsForSlug,
   formatWorkflowReply,
 } = require('../utils/formatters');
+const { getWorkflowMetadata, listWorkflowMetadata } = require('../workflows/metadata');
 const { runCompetitorWorkflow, PIPELINE_STEPS: COMPETITOR_STEPS } = require('../workflows/competitorWorkflow');
 const { runLegalWorkflow, PIPELINE_STEPS: LEGAL_STEPS } = require('../workflows/legalWorkflow');
 const { runAnalyticsWorkflow, PIPELINE_STEPS: ANALYTICS_STEPS } = require('../workflows/analyticsWorkflow');
@@ -16,21 +16,14 @@ const PIPELINE_BY_WORKFLOW = {
 };
 
 /**
- * @param {string} stepId
- * @param {string} label
- * @param {() => Promise<unknown>} fn
+ * @param {object} state
  */
-async function runStep(stepId, label, fn) {
-  const started = Date.now();
-  console.log(`[WorkflowEngine] ▶ ${stepId} — ${label}`);
-  try {
-    const output = await fn();
-    console.log(`[WorkflowEngine] ✔ ${stepId} (${Date.now() - started}ms)`);
-    return output;
-  } catch (error) {
-    console.error(`[WorkflowEngine] ✖ ${stepId}`, error?.message ?? error);
-    throw new WorkflowStepError(stepId, error);
+function sanitizePipelineResult(state) {
+  const result = { ...state };
+  for (const key of Object.keys(result)) {
+    if (key.startsWith('stageMarkdown_')) delete result[key];
   }
+  return result;
 }
 
 /**
@@ -44,10 +37,11 @@ async function executeWorkflow(workflowTitle, input) {
   }
 
   const slug = getWorkflowSlug(workflowTitle);
-  console.log(`[WorkflowEngine] Запуск pipeline: ${slug}`);
+  console.log(`[Workflow Engine] Pipeline: ${slug}`);
 
-  const result = await pipeline.run(input, runStep);
-  result.workflow = slug;
+  const raw = await pipeline.run(input);
+  const result = sanitizePipelineResult(raw);
+  if (!result.workflow) result.workflow = slug;
 
   return result;
 }
@@ -58,29 +52,54 @@ async function executeWorkflow(workflowTitle, input) {
  */
 async function runWorkflowPipeline(workflowTitle, input) {
   const slug = getWorkflowSlug(workflowTitle);
+  const meta = getWorkflowMetadata(workflowTitle);
   const result = await executeWorkflow(workflowTitle, input);
+  const stepDefs = PIPELINE_BY_WORKFLOW[workflowTitle]?.steps ?? meta?.stages ?? [];
   const sections = getSectionsForSlug(slug);
-  const stepDefs = PIPELINE_BY_WORKFLOW[workflowTitle]?.steps ?? [];
+
+  const report =
+    typeof result.report === 'string' && result.report.trim()
+      ? result.report.trim()
+      : formatWorkflowReply(workflowTitle, result);
+
+  const progress = {
+    currentStage: stepDefs.length,
+    totalStages: stepDefs.length,
+    stageName: 'Complete',
+    progress: 100,
+  };
 
   return {
     workflow: workflowTitle,
     workflowSlug: slug,
     result,
-    reply: formatWorkflowReply(workflowTitle, result),
+    report,
+    reply: report,
     steps: stepDefs.map((s) => s.label),
     stepIds: stepDefs.map((s) => s.id),
     sections,
+    progress,
+    metadata: meta
+      ? {
+          id: meta.id,
+          title: meta.title,
+          description: meta.description,
+          estimatedDuration: meta.estimatedDuration,
+          stages: meta.stages,
+        }
+      : undefined,
+    engineVersion: '2.0',
   };
 }
 
 function getPipelineSteps(workflowTitle) {
-  return PIPELINE_BY_WORKFLOW[workflowTitle]?.steps ?? [];
+  return PIPELINE_BY_WORKFLOW[workflowTitle]?.steps ?? getWorkflowMetadata(workflowTitle)?.stages ?? [];
 }
 
 module.exports = {
-  runStep,
   executeWorkflow,
   runWorkflowPipeline,
   getPipelineSteps,
+  listWorkflowMetadata,
   PIPELINE_BY_WORKFLOW,
 };

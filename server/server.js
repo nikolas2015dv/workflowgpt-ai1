@@ -10,6 +10,7 @@ const { processTextRequest, processFileUpload } = require('./workflows/processor
 const { WorkflowStepError, WorkflowValidationError, requireWorkflow } = require('./utils/validators');
 const { buildExport } = require('./services/exportService');
 const { createCorsOptions, parseAllowedOrigins } = require('./config/cors');
+const { listWorkflowMetadata } = require('./workflows/metadata');
 
 dotenv.config({ path: path.join(__dirname, '.env') });
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
@@ -98,6 +99,10 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
+app.get('/api/workflows', (_req, res) => {
+  jsonOk(res, { workflows: listWorkflowMetadata(), engineVersion: '2.0' });
+});
+
 app.get('/', (_req, res) => {
   jsonOk(res, {
     service: 'workflowgpt-api',
@@ -129,12 +134,16 @@ app.post('/api/test-ai', async (req, res) => {
 
     return jsonOk(res, {
       reply: pipeline.reply,
+      report: pipeline.report,
       result: pipeline.result,
       workflow: pipeline.workflow,
       workflowSlug: pipeline.workflowSlug,
       steps: pipeline.steps,
       stepIds: pipeline.stepIds,
       sections: pipeline.sections,
+      progress: pipeline.progress,
+      metadata: pipeline.metadata,
+      engineVersion: pipeline.engineVersion,
     });
   } catch (error) {
     console.error('[POST /api/test-ai]', error);
@@ -214,12 +223,16 @@ app.post('/api/workflow/upload', (req, res) => {
 
       return jsonOk(res, {
         reply: pipeline.reply,
+        report: pipeline.report,
         result: pipeline.result,
         workflow: pipeline.workflow,
         workflowSlug: pipeline.workflowSlug,
         steps: pipeline.steps,
         stepIds: pipeline.stepIds,
         sections: pipeline.sections,
+        progress: pipeline.progress,
+        metadata: pipeline.metadata,
+        engineVersion: pipeline.engineVersion,
         filename: req.file.originalname,
       });
     } catch (error) {
@@ -252,12 +265,16 @@ app.post('/api/upload-contract', (req, res) => {
 
       return jsonOk(res, {
         reply: pipeline.reply,
+        report: pipeline.report,
         result: pipeline.result,
         workflow: pipeline.workflow,
         workflowSlug: pipeline.workflowSlug,
         steps: pipeline.steps,
         stepIds: pipeline.stepIds,
         sections: pipeline.sections,
+        progress: pipeline.progress,
+        metadata: pipeline.metadata,
+        engineVersion: pipeline.engineVersion,
         filename: req.file.originalname,
       });
     } catch (error) {

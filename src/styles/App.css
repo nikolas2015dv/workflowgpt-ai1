@@ -1556,10 +1556,67 @@ html.tg-mini-app #root {
   flex-shrink: 0;
 }
 
-.workflow-progress {
+.workflow-progress-wrap {
   margin: 0 0 var(--space-md);
+}
+
+.workflow-progress__active-hint {
+  margin: 0 0 var(--space-sm);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--tg-text);
+  animation: pulseHint 1.6s ease-in-out infinite;
+}
+
+@keyframes pulseHint {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.workflow-progress {
+  margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.workflow-progress__item--active {
+  animation: stepIn 0.35s var(--ease-out) both, activeGlow 1.2s ease-in-out infinite;
+}
+
+@keyframes activeGlow {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
+.results-report {
+  margin-bottom: var(--space-md);
+  padding: var(--space-md);
+}
+
+.results-report__title {
+  margin: 0 0 var(--space-sm);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.results-report__body {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--tg-text);
 }
 
 .workflow-progress__item {

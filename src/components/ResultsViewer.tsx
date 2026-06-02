@@ -7,9 +7,10 @@ import { ResultSectionCard } from './ResultSectionCard';
 interface ResultsViewerProps {
   run: WorkflowRunResult;
   onRestart: () => void;
+  restartLabel?: string;
 }
 
-export const ResultsViewer: React.FC<ResultsViewerProps> = ({ run, onRestart }) => {
+export const ResultsViewer: React.FC<ResultsViewerProps> = ({ run, onRestart, restartLabel }) => {
   const [copied, setCopied] = useState(false);
   const [exporting, setExporting] = useState<'pdf' | 'docx' | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -140,7 +141,7 @@ export const ResultsViewer: React.FC<ResultsViewerProps> = ({ run, onRestart }) 
           </button>
         </div>
         <button type="button" className="btn-primary btn-primary--outline btn-restart" onClick={onRestart}>
-          Начать заново
+          {restartLabel ?? 'Начать заново'}
         </button>
       </div>
     </section>

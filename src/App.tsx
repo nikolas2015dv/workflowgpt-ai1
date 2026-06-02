@@ -2,18 +2,26 @@ import React, { useState } from 'react';
 import { WorkflowGallery } from './components/WorkflowGallery';
 import { TaskExecutor } from './components/TaskExecutor';
 import { ResultsViewer } from './components/ResultsViewer';
+import { HistoryScreen } from './components/HistoryScreen';
+import { AppTabBar, type AppTab } from './components/AppTabBar';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { AppFooter } from './components/AppFooter';
 import { useTelegram } from './hooks/useTelegram';
+import { buildWorkflowSubject, type HistorySubjectContext } from './lib/historySubject';
+import { saveHistoryItem, historyItemToRunResult } from './services/historyService';
 import type { WorkflowRunResult } from './types/workflowResult';
+import type { HistoryItem } from './types/history';
 
 type AppState = 'gallery' | 'executor' | 'results';
+type ResultsReturnTo = 'gallery' | 'history';
 
 const App: React.FC = () => {
   const { user, isTelegram, isReady } = useTelegram();
+  const [activeTab, setActiveTab] = useState<AppTab>('workflows');
   const [state, setState] = useState<AppState>('gallery');
   const [selectedWorkflow, setSelectedWorkflow] = useState<string | null>(null);
   const [runResult, setRunResult] = useState<WorkflowRunResult | null>(null);
+  const [resultsReturnTo, setResultsReturnTo] = useState<ResultsReturnTo>('gallery');
   const [screenKey, setScreenKey] = useState(0);
 
   const navigate = (next: AppState) => {
@@ -23,12 +31,40 @@ const App: React.FC = () => {
 
   const handleSelectWorkflow = (workflow: string) => {
     setSelectedWorkflow(workflow);
+    setActiveTab('workflows');
     navigate('executor');
   };
 
-  const handleCompleteTask = (result: WorkflowRunResult) => {
+  const handleCompleteTask = (result: WorkflowRunResult, subjectContext: HistorySubjectContext) => {
+    const workflowType = result.workflowSlug ?? result.workflow;
+    const subject = buildWorkflowSubject(result.workflow || selectedWorkflow || workflowType, subjectContext);
+
+    saveHistoryItem({
+      workflowType,
+      subject,
+      result,
+    });
+
     setRunResult(result);
+    setResultsReturnTo('gallery');
+    setActiveTab('workflows');
     navigate('results');
+  };
+
+  const handleOpenHistoryItem = (item: HistoryItem) => {
+    setRunResult(historyItemToRunResult(item));
+    setResultsReturnTo('history');
+    setActiveTab('history');
+    navigate('results');
+  };
+
+  const handleTabChange = (tab: AppTab) => {
+    setActiveTab(tab);
+    if (tab === 'history') {
+      navigate('gallery');
+    } else if (state !== 'executor' && state !== 'results') {
+      navigate('gallery');
+    }
   };
 
   const handleRestart = () => {
@@ -37,25 +73,38 @@ const App: React.FC = () => {
     navigate('gallery');
   };
 
+  const handleResultsExit = () => {
+    if (resultsReturnTo === 'history') {
+      setRunResult(null);
+      setActiveTab('history');
+      navigate('gallery');
+      return;
+    }
+    handleRestart();
+  };
+
   const handleBack = () => {
     setSelectedWorkflow(null);
     navigate('gallery');
   };
 
   const subtitle =
-    state === 'gallery'
-      ? 'Автоматизация с AI'
+    state === 'results'
+      ? 'Готово'
       : state === 'executor'
         ? selectedWorkflow ?? ''
-        : 'Готово';
+        : activeTab === 'history'
+          ? 'History'
+          : 'Автоматизация с AI';
 
   const avatarLetter = user.first_name.charAt(0).toUpperCase();
   const showMainButtonPad = isTelegram && state === 'executor';
   const showResultsPad = state === 'results';
+  const showTabBar = state === 'gallery';
 
   return (
     <div
-      className={`app-shell${showMainButtonPad ? ' app-shell--main-button' : ''}${showResultsPad ? ' app-shell--results' : ''}${isTelegram ? ' app-shell--telegram' : ''}`}
+      className={`app-shell${showMainButtonPad ? ' app-shell--main-button' : ''}${showResultsPad ? ' app-shell--results' : ''}${showTabBar ? ' app-shell--tabs' : ''}${isTelegram ? ' app-shell--telegram' : ''}`}
     >
       <div className="app-bg" aria-hidden="true">
         <span className="app-bg-orb app-bg-orb--1" />
@@ -109,7 +158,12 @@ const App: React.FC = () => {
       <main className="app-main">
         <ErrorBoundary onReset={handleRestart}>
           <div key={screenKey} className="screen screen--enter">
-            {state === 'gallery' && <WorkflowGallery onSelect={handleSelectWorkflow} />}
+            {state === 'gallery' && activeTab === 'workflows' && (
+              <WorkflowGallery onSelect={handleSelectWorkflow} />
+            )}
+            {state === 'gallery' && activeTab === 'history' && (
+              <HistoryScreen onOpen={handleOpenHistoryItem} />
+            )}
             {state === 'executor' && selectedWorkflow && (
               <TaskExecutor
                 workflow={selectedWorkflow}
@@ -118,11 +172,17 @@ const App: React.FC = () => {
               />
             )}
             {state === 'results' && runResult && (
-              <ResultsViewer run={runResult} onRestart={handleRestart} />
+              <ResultsViewer
+                run={runResult}
+                onRestart={handleResultsExit}
+                restartLabel={resultsReturnTo === 'history' ? 'Назад в History' : undefined}
+              />
             )}
           </div>
         </ErrorBoundary>
       </main>
+
+      {showTabBar && <AppTabBar activeTab={activeTab} onChange={handleTabChange} />}
 
       <AppFooter />
     </div>

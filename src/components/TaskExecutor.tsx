@@ -8,6 +8,7 @@ import {
 import { getPipelineLoadingSteps } from '../config/pipelineSteps';
 import { getEstimatedDurationMs } from '../config/workflowEngine';
 import { ApiRequestError, requestAiReply, uploadWorkflowFile } from '../lib/api';
+import type { HistorySubjectContext } from '../lib/historySubject';
 import { logError, logUpload, logWorkflow } from '../lib/mobileDebug';
 import { WorkflowProgress } from './WorkflowProgress';
 import type { WorkflowRunResult } from '../types/workflowResult';
@@ -18,7 +19,7 @@ import { CompetitorFields } from './CompetitorFields';
 
 interface TaskExecutorProps {
   workflow: string;
-  onComplete: (result: WorkflowRunResult) => void;
+  onComplete: (result: WorkflowRunResult, subjectContext: HistorySubjectContext) => void;
   onBack: () => void;
 }
 
@@ -98,7 +99,11 @@ export const TaskExecutor: React.FC<TaskExecutorProps> = ({ workflow, onComplete
       setProgress(100);
       setLoadingStep(loadingSteps.length - 1);
       hapticNotification('success');
-      onComplete({ ...run, workflow: run.workflow || workflow });
+      onComplete({ ...run, workflow: run.workflow || workflow }, {
+        fileName: selectedFile?.name,
+        text: inputData.trim(),
+        competitorMeta: isCompetitors ? competitorMeta : undefined,
+      });
     } catch (err) {
       logError('workflow', err);
       let message =

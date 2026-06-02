@@ -47,28 +47,36 @@ export function getTelegramUser(): TelegramUser {
   return parseTelegramUser() ?? BROWSER_FALLBACK_USER;
 }
 
+function applyFormFieldColors(): void {
+  const root = document.documentElement;
+  root.style.setProperty('--field-text', '#ffffff');
+  root.style.setProperty('--field-placeholder', '#a0a0a0');
+}
+
 export function applyTelegramTheme(): void {
   const themeParams = getTelegramWebApp()?.themeParams;
   const root = document.documentElement;
 
-  if (!themeParams) return;
+  if (themeParams) {
+    Object.entries(THEME_MAP).forEach(([key, cssVar]) => {
+      const value = themeParams[key as keyof typeof themeParams];
+      if (typeof value === 'string' && value.length > 0) {
+        root.style.setProperty(cssVar, value);
+      }
+    });
 
-  Object.entries(THEME_MAP).forEach(([key, cssVar]) => {
-    const value = themeParams[key as keyof typeof themeParams];
-    if (typeof value === 'string' && value.length > 0) {
-      root.style.setProperty(cssVar, value);
+    if (themeParams.bg_color) {
+      root.style.setProperty('--tg-theme-bg-color', themeParams.bg_color);
     }
-  });
+    if (themeParams.text_color) {
+      root.style.setProperty('--tg-theme-text-color', themeParams.text_color);
+    }
+    if (themeParams.button_color) {
+      root.style.setProperty('--tg-theme-button-color', themeParams.button_color);
+    }
+  }
 
-  if (themeParams.bg_color) {
-    root.style.setProperty('--tg-theme-bg-color', themeParams.bg_color);
-  }
-  if (themeParams.text_color) {
-    root.style.setProperty('--tg-theme-text-color', themeParams.text_color);
-  }
-  if (themeParams.button_color) {
-    root.style.setProperty('--tg-theme-button-color', themeParams.button_color);
-  }
+  applyFormFieldColors();
 }
 
 export function configureTelegramViewport(): void {

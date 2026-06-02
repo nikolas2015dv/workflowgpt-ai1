@@ -12,6 +12,12 @@
   --tg-destructive: #ff453a;
   --tg-separator: rgba(255, 255, 255, 0.08);
 
+  /* Form fields — fixed contrast (not overridden by Telegram theme) */
+  --field-text: #ffffff;
+  --field-placeholder: #a0a0a0;
+  --field-bg: rgba(0, 0, 0, 0.25);
+  --field-bg-focus: rgba(0, 0, 0, 0.35);
+
   --glass-bg: rgba(22, 22, 26, 0.65);
   --glass-bg-hover: rgba(32, 32, 38, 0.78);
   --glass-border: rgba(255, 255, 255, 0.1);
@@ -48,6 +54,7 @@
 html {
   -webkit-text-size-adjust: 100%;
   -webkit-tap-highlight-color: transparent;
+  color-scheme: dark;
 }
 
 body {
@@ -468,29 +475,59 @@ body {
   color: var(--tg-hint);
 }
 
-.field-input {
+/* ─── Text inputs (all workflows + modals) ─── */
+.field-input,
+.field-textarea,
+.notion-modal__field input {
   width: 100%;
-  padding: 12px var(--space-md);
   font-family: inherit;
   font-size: 16px;
-  color: var(--tg-text);
-  background: rgba(0, 0, 0, 0.25);
+  line-height: 1.5;
+  color: var(--field-text);
+  -webkit-text-fill-color: var(--field-text);
+  caret-color: var(--field-text);
+  background: var(--field-bg);
   border: 1px solid var(--tg-separator);
   border-radius: var(--radius-md);
   transition:
     border-color var(--transition-fast),
-    box-shadow var(--transition-fast);
+    box-shadow var(--transition-fast),
+    background var(--transition-fast);
 }
 
-.field-input::placeholder {
-  color: var(--tg-hint);
-  opacity: 0.7;
+.field-input {
+  padding: 12px var(--space-md);
 }
 
-.field-input:focus {
+.field-input::placeholder,
+.field-textarea::placeholder,
+.notion-modal__field input::placeholder {
+  color: var(--field-placeholder);
+  opacity: 1;
+  -webkit-text-fill-color: var(--field-placeholder);
+}
+
+.field-input:focus,
+.field-textarea:focus,
+.notion-modal__field input:focus {
   outline: none;
   border-color: rgba(42, 171, 238, 0.5);
   box-shadow: 0 0 0 3px rgba(42, 171, 238, 0.15);
+  background: var(--field-bg-focus);
+}
+
+.field-input:-webkit-autofill,
+.field-input:-webkit-autofill:hover,
+.field-input:-webkit-autofill:focus,
+.field-textarea:-webkit-autofill,
+.field-textarea:-webkit-autofill:hover,
+.field-textarea:-webkit-autofill:focus,
+.notion-modal__field input:-webkit-autofill,
+.notion-modal__field input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--field-text);
+  caret-color: var(--field-text);
+  box-shadow: 0 0 0 1000px var(--field-bg) inset;
+  transition: background-color 9999s ease-out 0s;
 }
 
 .file-upload__name {
@@ -624,8 +661,23 @@ body {
 }
 
 .app-shell--telegram .field-input,
-.app-shell--telegram .field-textarea {
+.app-shell--telegram .field-textarea,
+.app-shell--telegram .notion-modal__field input,
+html.tg-mini-app .field-input,
+html.tg-mini-app .field-textarea,
+html.tg-mini-app .notion-modal__field input {
   font-size: 16px;
+  color: var(--field-text);
+  -webkit-text-fill-color: var(--field-text);
+  caret-color: var(--field-text);
+}
+
+html.tg-mini-app .field-input::placeholder,
+html.tg-mini-app .field-textarea::placeholder,
+html.tg-mini-app .notion-modal__field input::placeholder {
+  color: var(--field-placeholder);
+  opacity: 1;
+  -webkit-text-fill-color: var(--field-placeholder);
 }
 
 html.tg-mini-app,
@@ -868,33 +920,9 @@ html.tg-mini-app #root {
 }
 
 .field-textarea {
-  width: 100%;
   min-height: 120px;
   padding: var(--space-md);
-  font-family: inherit;
-  font-size: 16px;
-  line-height: 1.5;
-  color: var(--tg-text);
-  background: rgba(0, 0, 0, 0.25);
-  border: 1px solid var(--tg-separator);
-  border-radius: var(--radius-md);
   resize: none;
-  transition:
-    border-color var(--transition-fast),
-    box-shadow var(--transition-fast),
-    background var(--transition-fast);
-}
-
-.field-textarea::placeholder {
-  color: var(--tg-hint);
-  opacity: 0.7;
-}
-
-.field-textarea:focus {
-  outline: none;
-  border-color: rgba(42, 171, 238, 0.5);
-  box-shadow: 0 0 0 3px rgba(42, 171, 238, 0.15);
-  background: rgba(0, 0, 0, 0.35);
 }
 
 .field-hint {
@@ -1939,18 +1967,14 @@ html.tg-mini-app #root {
 }
 
 .notion-modal__field input {
-  width: 100%;
   padding: 12px 14px;
-  border: 1px solid var(--tg-separator);
-  border-radius: var(--radius-md);
-  background: var(--tg-bg);
-  color: var(--tg-text);
   font-size: 15px;
 }
 
 .notion-modal__field input:focus {
-  outline: 2px solid var(--tg-button);
-  outline-offset: 1px;
+  outline: none;
+  border-color: rgba(42, 171, 238, 0.5);
+  box-shadow: 0 0 0 3px rgba(42, 171, 238, 0.15);
 }
 
 .notion-modal__actions {

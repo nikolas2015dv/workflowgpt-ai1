@@ -21,6 +21,8 @@ const App: React.FC = () => {
   const [state, setState] = useState<AppState>('gallery');
   const [selectedWorkflow, setSelectedWorkflow] = useState<string | null>(null);
   const [runResult, setRunResult] = useState<WorkflowRunResult | null>(null);
+  const [resultSubject, setResultSubject] = useState<string | undefined>();
+  const [resultCreatedAt, setResultCreatedAt] = useState<number | undefined>();
   const [resultsReturnTo, setResultsReturnTo] = useState<ResultsReturnTo>('gallery');
   const [screenKey, setScreenKey] = useState(0);
 
@@ -46,6 +48,8 @@ const App: React.FC = () => {
     });
 
     setRunResult(result);
+    setResultSubject(subject);
+    setResultCreatedAt(Date.now());
     setResultsReturnTo('gallery');
     setActiveTab('workflows');
     navigate('results');
@@ -53,6 +57,8 @@ const App: React.FC = () => {
 
   const handleOpenHistoryItem = (item: HistoryItem) => {
     setRunResult(historyItemToRunResult(item));
+    setResultSubject(item.subject);
+    setResultCreatedAt(item.createdAt);
     setResultsReturnTo('history');
     setActiveTab('history');
     navigate('results');
@@ -70,12 +76,16 @@ const App: React.FC = () => {
   const handleRestart = () => {
     setSelectedWorkflow(null);
     setRunResult(null);
+    setResultSubject(undefined);
+    setResultCreatedAt(undefined);
     navigate('gallery');
   };
 
   const handleResultsExit = () => {
     if (resultsReturnTo === 'history') {
       setRunResult(null);
+      setResultSubject(undefined);
+      setResultCreatedAt(undefined);
       setActiveTab('history');
       navigate('gallery');
       return;
@@ -176,6 +186,8 @@ const App: React.FC = () => {
                 run={runResult}
                 onRestart={handleResultsExit}
                 restartLabel={resultsReturnTo === 'history' ? 'Назад в History' : undefined}
+                subject={resultSubject}
+                createdAt={resultCreatedAt}
               />
             )}
           </div>

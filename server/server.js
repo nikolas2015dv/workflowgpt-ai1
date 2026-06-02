@@ -11,6 +11,7 @@ const { WorkflowStepError, WorkflowValidationError, requireWorkflow } = require(
 const { buildExport } = require('./services/exportService');
 const { createCorsOptions, parseAllowedOrigins } = require('./config/cors');
 const { listWorkflowMetadata } = require('./workflows/metadata');
+const { exportToNotion, NotionExportError } = require('./integrations/notion');
 
 dotenv.config({ path: path.join(__dirname, '.env') });
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
@@ -151,9 +152,58 @@ app.post('/api/test-ai', async (req, res) => {
   }
 });
 
+app.post('/api/export/notion', async (req, res) => {
+  try {
+    const {
+      notionApiKey,
+      databaseId,
+      title,
+      report,
+      workflowType,
+      workflow,
+      subject,
+      createdAt,
+      result,
+    } = req.body ?? {};
+
+    if (!report || typeof report !== 'string' || !report.trim()) {
+      return jsonError(res, 400, 'Bad Request', 'Field "report" is required');
+    }
+
+    const page = await exportToNotion({
+      notionApiKey,
+      databaseId,
+      title: title ?? `WorkflowGPT — ${workflow ?? workflowType ?? 'Report'}`,
+      report,
+      workflowType: workflowType ?? workflow ?? 'workflow',
+      subject,
+      createdAt,
+      result,
+    });
+
+    return jsonOk(res, {
+      pageId: page.pageId,
+      url: page.url,
+      message: 'Exported successfully',
+    });
+  } catch (error) {
+    if (error instanceof NotionExportError) {
+      const status =
+        error.status ??
+        (error.code === 'invalid_token' ? 401 : error.code === 'invalid_database' ? 404 : 500);
+      return jsonError(res, status, error.code, error.message, { code: error.code });
+    }
+    console.error('[POST /api/export/notion]', error);
+    return jsonError(res, 500, 'Notion Export Error', error.message ?? 'Export failed');
+  }
+});
+
 app.post('/api/export/:format', async (req, res) => {
   try {
     const format = req.params.format?.toLowerCase();
+    if (format === 'notion') {
+      return jsonError(res, 400, 'Bad Request', 'Use POST /api/export/notion');
+    }
     if (format !== 'pdf' && format !== 'docx') {
       return jsonError(res, 400, 'Bad Request', 'Use pdf or docx');
     }

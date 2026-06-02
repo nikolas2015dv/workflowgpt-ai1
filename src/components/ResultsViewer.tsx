@@ -2,17 +2,29 @@ import React, { useState } from 'react';
 import type { WorkflowRunResult } from '../types/workflowResult';
 import { buildCopyText, sectionHasContent } from '../lib/formatResult';
 import { copyReportText, downloadReport, shareReport } from '../lib/exportApi';
+import { exportReportToNotion, NotionExportError } from '../lib/notionExport';
+import { NotionExportModal } from './NotionExportModal';
 import { ResultSectionCard } from './ResultSectionCard';
 
 interface ResultsViewerProps {
   run: WorkflowRunResult;
   onRestart: () => void;
   restartLabel?: string;
+  subject?: string;
+  createdAt?: number;
 }
 
-export const ResultsViewer: React.FC<ResultsViewerProps> = ({ run, onRestart, restartLabel }) => {
+export const ResultsViewer: React.FC<ResultsViewerProps> = ({
+  run,
+  onRestart,
+  restartLabel,
+  subject,
+  createdAt,
+}) => {
   const [copied, setCopied] = useState(false);
   const [exporting, setExporting] = useState<'pdf' | 'docx' | null>(null);
+  const [notionOpen, setNotionOpen] = useState(false);
+  const [notionLoading, setNotionLoading] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [exportHint, setExportHint] = useState<string | null>(null);
 
@@ -55,6 +67,40 @@ export const ResultsViewer: React.FC<ResultsViewerProps> = ({ run, onRestart, re
     const ok = await shareReport(copyText, `WorkflowGPT — ${run.workflow}`);
     if (!ok) await handleCopy();
     else setExportHint('Текст отчёта готов к отправке');
+  };
+
+  const handleNotionExport = async (apiKey: string, databaseId: string) => {
+    setExportError(null);
+    setExportHint(null);
+    setNotionLoading(true);
+    try {
+      const result = await exportReportToNotion(
+        run,
+        { apiKey, databaseId },
+        { subject, createdAt }
+      );
+      setNotionOpen(false);
+      setExportHint(
+        result.url ? 'Exported successfully. Откройте страницу в Notion.' : 'Exported successfully'
+      );
+      if (result.url) {
+        try {
+          window.open(result.url, '_blank', 'noopener,noreferrer');
+        } catch {
+          /* Telegram WebView may block popups */
+        }
+      }
+    } catch (e) {
+      const message =
+        e instanceof NotionExportError
+          ? e.message
+          : e instanceof Error
+            ? e.message
+            : 'Не удалось экспортировать в Notion';
+      setExportError(message);
+    } finally {
+      setNotionLoading(false);
+    }
   };
 
   return (
@@ -120,7 +166,7 @@ export const ResultsViewer: React.FC<ResultsViewerProps> = ({ run, onRestart, re
           <button
             type="button"
             className="btn-export"
-            disabled={!!exporting}
+            disabled={!!exporting || notionLoading}
             onClick={() => void handleExport('pdf')}
           >
             {exporting === 'pdf' ? 'PDF…' : 'PDF'}
@@ -128,7 +174,7 @@ export const ResultsViewer: React.FC<ResultsViewerProps> = ({ run, onRestart, re
           <button
             type="button"
             className="btn-export"
-            disabled={!!exporting}
+            disabled={!!exporting || notionLoading}
             onClick={() => void handleExport('docx')}
           >
             {exporting === 'docx' ? 'DOCX…' : 'DOCX'}
@@ -139,11 +185,30 @@ export const ResultsViewer: React.FC<ResultsViewerProps> = ({ run, onRestart, re
           <button type="button" className="btn-export btn-export--ghost" onClick={() => void handleShare()}>
             Поделиться
           </button>
+          <button
+            type="button"
+            className="btn-export btn-export--notion"
+            disabled={!!exporting || notionLoading}
+            onClick={() => {
+              setExportError(null);
+              setExportHint(null);
+              setNotionOpen(true);
+            }}
+          >
+            {notionLoading ? 'Exporting to Notion...' : 'Export to Notion'}
+          </button>
         </div>
         <button type="button" className="btn-primary btn-primary--outline btn-restart" onClick={onRestart}>
           {restartLabel ?? 'Начать заново'}
         </button>
       </div>
+
+      <NotionExportModal
+        open={notionOpen}
+        loading={notionLoading}
+        onClose={() => !notionLoading && setNotionOpen(false)}
+        onSubmit={(apiKey, databaseId) => void handleNotionExport(apiKey, databaseId)}
+      />
     </section>
   );
 };

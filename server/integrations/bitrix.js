@@ -175,11 +175,82 @@ async function exportToBitrix({
   };
 }
 
+const TASK_DESCRIPTION =
+  'Generated automatically by WorkflowGPT based on workflow analysis.';
+
+function truncateTitle(text, max = 255) {
+  const value = String(text ?? '').trim();
+  if (value.length <= max) return value;
+  return `${value.slice(0, max - 1)}…`;
+}
+
+function parseTaskId(result) {
+  if (result == null) return null;
+  if (typeof result === 'number') return result;
+  if (typeof result === 'string' && /^\d+$/.test(result)) return Number(result);
+  if (typeof result === 'object') {
+    const nested = result.task?.id ?? result.id;
+    if (nested != null) return parseTaskId(nested);
+  }
+  return null;
+}
+
+/**
+ * @param {{
+ *   domain: string;
+ *   webhookUrl: string;
+ *   recommendations: string[];
+ *   description?: string;
+ * }} params
+ */
+async function createBitrixTasks({
+  domain,
+  webhookUrl,
+  recommendations,
+  description = TASK_DESCRIPTION,
+}) {
+  const normalizedDomain = normalizeDomain(domain);
+  const normalizedWebhook = normalizeWebhookUrl(webhookUrl, normalizedDomain);
+  const items = (Array.isArray(recommendations) ? recommendations : [])
+    .map((item) => String(item).trim())
+    .filter(Boolean);
+
+  if (items.length === 0) {
+    throw new BitrixExportError('no_recommendations', 'No recommendations to create tasks from', 400);
+  }
+
+  const taskIds = [];
+  const taskDescription = String(description ?? TASK_DESCRIPTION).trim() || TASK_DESCRIPTION;
+
+  for (const recommendation of items) {
+    const result = await callBitrix(normalizedWebhook, 'tasks.task.add', {
+      fields: {
+        TITLE: truncateTitle(recommendation),
+        DESCRIPTION: taskDescription,
+      },
+    });
+
+    const taskId = parseTaskId(result);
+    if (taskId == null) {
+      throw new BitrixExportError('bitrix_api', 'Bitrix24 did not return task ID', 500);
+    }
+    taskIds.push(taskId);
+  }
+
+  return {
+    taskIds,
+    count: taskIds.length,
+    domain: normalizedDomain,
+  };
+}
+
 module.exports = {
   BitrixExportError,
   validateBitrixWebhook,
   exportToBitrix,
+  createBitrixTasks,
   normalizeDomain,
   normalizeWebhookUrl,
   mapBitrixError,
+  TASK_DESCRIPTION,
 };

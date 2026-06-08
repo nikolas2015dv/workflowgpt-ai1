@@ -12,7 +12,7 @@ const { buildExport } = require('./services/exportService');
 const { createCorsOptions, parseAllowedOrigins } = require('./config/cors');
 const { listWorkflowMetadata } = require('./workflows/metadata');
 const { exportToNotion, NotionExportError } = require('./integrations/notion');
-const { validateBitrixWebhook, exportToBitrix, BitrixExportError } = require('./integrations/bitrix');
+const { validateBitrixWebhook, exportToBitrix, createBitrixTasks, BitrixExportError } = require('./integrations/bitrix');
 
 dotenv.config({ path: path.join(__dirname, '.env') });
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
@@ -272,6 +272,44 @@ app.post('/api/export/bitrix', async (req, res) => {
     }
     console.error('[POST /api/export/bitrix]', error);
     return jsonError(res, 500, 'Bitrix Export Error', error.message ?? 'Export failed');
+  }
+});
+
+app.post('/api/export/bitrix/tasks', async (req, res) => {
+  try {
+    const { domain, webhookUrl, recommendations, description } = req.body ?? {};
+
+    if (!Array.isArray(recommendations) || recommendations.length === 0) {
+      return jsonError(res, 400, 'Bad Request', 'Field "recommendations" is required', {
+        code: 'no_recommendations',
+      });
+    }
+
+    const result = await createBitrixTasks({
+      domain,
+      webhookUrl,
+      recommendations,
+      description,
+    });
+
+    return jsonOk(res, {
+      taskIds: result.taskIds,
+      count: result.count,
+      message: `${result.count} tasks successfully created in Bitrix24`,
+    });
+  } catch (error) {
+    if (error instanceof BitrixExportError) {
+      const status =
+        error.status ??
+        (error.code === 'invalid_webhook'
+          ? 401
+          : error.code === 'invalid_domain' || error.code === 'no_recommendations'
+            ? 400
+            : 500);
+      return jsonError(res, status, error.code, error.message, { code: error.code });
+    }
+    console.error('[POST /api/export/bitrix/tasks]', error);
+    return jsonError(res, 500, 'Bitrix Export Error', error.message ?? 'Task creation failed');
   }
 });
 

@@ -3,9 +3,10 @@ import type { WorkflowRunResult } from '../types/workflowResult';
 import { buildCopyText, sectionHasContent } from '../lib/formatResult';
 import { copyReportText, downloadReport, shareReport } from '../lib/exportApi';
 import { exportReportToNotion, NotionExportError } from '../lib/notionExport';
-import { exportReportToBitrix, BitrixExportError, type BitrixExportMode } from '../lib/bitrixExport';
+import { exportReportToBitrix, createBitrixTasksFromRecommendations, extractWorkflowRecommendations, BitrixExportError, type BitrixExportMode } from '../lib/bitrixExport';
+import { loadBitrixCredentials } from '../lib/bitrixStorage';
 import { NotionExportModal } from './NotionExportModal';
-import { BitrixExportModal } from './BitrixExportModal';
+import { BitrixExportModal, type BitrixModalPurpose } from './BitrixExportModal';
 import { ResultSectionCard } from './ResultSectionCard';
 
 interface ResultsViewerProps {
@@ -28,7 +29,9 @@ export const ResultsViewer: React.FC<ResultsViewerProps> = ({
   const [notionOpen, setNotionOpen] = useState(false);
   const [notionLoading, setNotionLoading] = useState(false);
   const [bitrixOpen, setBitrixOpen] = useState(false);
+  const [bitrixPurpose, setBitrixPurpose] = useState<BitrixModalPurpose>('crm');
   const [bitrixLoading, setBitrixLoading] = useState(false);
+  const [bitrixTasksLoading, setBitrixTasksLoading] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [exportHint, setExportHint] = useState<string | null>(null);
 
@@ -38,6 +41,7 @@ export const ResultsViewer: React.FC<ResultsViewerProps> = ({
   );
 
   const copyText = buildCopyText(run.workflow, resultRecord, run.sections, run.reply);
+  const recommendationCount = extractWorkflowRecommendations(run).length;
 
   const handleCopy = async () => {
     const ok = await copyReportText(copyText);
@@ -73,7 +77,44 @@ export const ResultsViewer: React.FC<ResultsViewerProps> = ({
     else setExportHint('Текст отчёта готов к отправке');
   };
 
-  const exportsBusy = !!exporting || notionLoading || bitrixLoading;
+  const exportsBusy = !!exporting || notionLoading || bitrixLoading || bitrixTasksLoading;
+
+  const runBitrixTasksCreate = async (domain: string, webhookUrl: string) => {
+    setExportError(null);
+    setExportHint(null);
+    setBitrixTasksLoading(true);
+    try {
+      const result = await createBitrixTasksFromRecommendations(run, { domain, webhookUrl });
+      setBitrixOpen(false);
+      setExportHint(`${result.count} tasks successfully created in Bitrix24`);
+    } catch (e) {
+      const message =
+        e instanceof BitrixExportError
+          ? e.message
+          : e instanceof Error
+            ? e.message
+            : 'Не удалось создать задачи в Bitrix24';
+      setExportError(message);
+    } finally {
+      setBitrixTasksLoading(false);
+    }
+  };
+
+  const handleCreateBitrixTasksClick = () => {
+    setExportError(null);
+    setExportHint(null);
+    if (recommendationCount === 0) {
+      setExportError('В результатах нет рекомендаций для создания задач.');
+      return;
+    }
+    const saved = loadBitrixCredentials();
+    if (saved.domain.trim() && saved.webhookUrl.trim()) {
+      void runBitrixTasksCreate(saved.domain, saved.webhookUrl);
+      return;
+    }
+    setBitrixPurpose('tasks');
+    setBitrixOpen(true);
+  };
 
   const handleBitrixExport = async (domain: string, webhookUrl: string, mode: BitrixExportMode) => {
     setExportError(null);
@@ -243,10 +284,19 @@ export const ResultsViewer: React.FC<ResultsViewerProps> = ({
             onClick={() => {
               setExportError(null);
               setExportHint(null);
+              setBitrixPurpose('crm');
               setBitrixOpen(true);
             }}
           >
             {bitrixLoading ? 'Exporting to Bitrix24...' : 'Export to Bitrix24'}
+          </button>
+          <button
+            type="button"
+            className="btn-export btn-export--bitrix-tasks"
+            disabled={exportsBusy || recommendationCount === 0}
+            onClick={handleCreateBitrixTasksClick}
+          >
+            {bitrixTasksLoading ? 'Creating Bitrix24 Tasks...' : 'Create Bitrix24 Tasks'}
           </button>
         </div>
         <button type="button" className="btn-primary btn-primary--outline btn-restart" onClick={onRestart}>
@@ -263,9 +313,12 @@ export const ResultsViewer: React.FC<ResultsViewerProps> = ({
 
       <BitrixExportModal
         open={bitrixOpen}
-        loading={bitrixLoading}
-        onClose={() => !bitrixLoading && setBitrixOpen(false)}
+        loading={bitrixPurpose === 'tasks' ? bitrixTasksLoading : bitrixLoading}
+        purpose={bitrixPurpose}
+        recommendationCount={recommendationCount}
+        onClose={() => !bitrixLoading && !bitrixTasksLoading && setBitrixOpen(false)}
         onExport={(domain, webhookUrl, mode) => void handleBitrixExport(domain, webhookUrl, mode)}
+        onCreateTasks={(domain, webhookUrl) => void runBitrixTasksCreate(domain, webhookUrl)}
       />
     </section>
   );

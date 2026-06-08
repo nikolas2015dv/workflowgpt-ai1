@@ -2001,6 +2001,12 @@ html.tg-mini-app #root {
   color: #fff;
 }
 
+.btn-export--bitrix-tasks {
+  border-color: rgba(120, 200, 120, 0.45);
+  background: linear-gradient(135deg, #2d7a4a 0%, #1f5c36 100%);
+  color: #fff;
+}
+
 .bitrix-modal {
   position: fixed;
   inset: 0;
@@ -2044,6 +2050,11 @@ html.tg-mini-app #root {
   font-size: 13px;
   line-height: 1.4;
   color: var(--tg-hint);
+}
+
+.bitrix-modal__hint--count {
+  color: var(--tg-text);
+  font-weight: 600;
 }
 
 .bitrix-modal__form {

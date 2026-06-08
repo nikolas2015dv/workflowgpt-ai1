@@ -16,7 +16,8 @@ export type BitrixExportErrorCode =
   | 'unknown'
   | 'config'
   | 'backend'
-  | 'empty_report';
+  | 'empty_report'
+  | 'no_recommendations';
 
 export class BitrixExportError extends Error {
   constructor(
@@ -48,6 +49,9 @@ function mapBitrixApiError(data: {
   }
   if (code === 'empty_report') {
     return new BitrixExportError('Нет данных отчёта для экспорта.', 'empty_report', 400);
+  }
+  if (code === 'no_recommendations') {
+    return new BitrixExportError('В результатах нет рекомендаций для создания задач.', 'no_recommendations', 400);
   }
 
   return new BitrixExportError(message, code);
@@ -90,12 +94,19 @@ function extractCompanyName(subject?: string): string {
   return subject.replace(/^(Конкурент|Договор|Файл|Данные):\s*/, '').trim() || subject.trim();
 }
 
+export const BITRIX_TASK_DESCRIPTION =
+  'Generated automatically by WorkflowGPT based on workflow analysis.';
+
 function extractRecommendations(result: Record<string, unknown>): string[] {
   const rec = result.recommendations;
   if (Array.isArray(rec)) {
     return rec.map((item) => String(item)).filter((item) => item.trim().length > 0);
   }
   return [];
+}
+
+export function extractWorkflowRecommendations(run: WorkflowRunResult): string[] {
+  return extractRecommendations(run.result as Record<string, unknown>);
 }
 
 export function buildBitrixEntityTitle(run: WorkflowRunResult, subject?: string): string {
@@ -305,5 +316,74 @@ export async function exportReportToBitrix(
     entityId: data.entityId,
     entityType: data.entityType ?? options.mode,
     url: data.url ?? null,
+  };
+}
+
+export interface BitrixTasksResult {
+  taskIds: number[];
+  count: number;
+}
+
+export async function createBitrixTasksFromRecommendations(
+  run: WorkflowRunResult,
+  credentials: BitrixCredentials
+): Promise<BitrixTasksResult> {
+  const domain = normalizeBitrixDomain(credentials.domain);
+  const webhookUrl = normalizeBitrixWebhookUrl(credentials.webhookUrl, domain);
+  const recommendations = extractWorkflowRecommendations(run);
+
+  if (recommendations.length === 0) {
+    throw new BitrixExportError(
+      'В результатах нет рекомендаций для создания задач.',
+      'no_recommendations'
+    );
+  }
+
+  logMobile('bitrix tasks start', recommendations.length);
+
+  let response: Response;
+  try {
+    response = await fetch(apiUrl('/api/export/bitrix/tasks'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        domain,
+        webhookUrl,
+        recommendations,
+        description: BITRIX_TASK_DESCRIPTION,
+      }),
+    });
+  } catch (e) {
+    const mapped = mapFetchError(e);
+    if (mapped.code === 'network' || mapped.code === 'config') {
+      throw new BitrixExportError(mapped.message, mapped.code, mapped.status);
+    }
+    logError('bitrix-tasks-fetch', e);
+    throw new BitrixExportError(mapped.message, 'network');
+  }
+
+  const data = (await response.json().catch(() => ({}))) as {
+    ok?: boolean;
+    message?: string;
+    error?: string;
+    code?: string;
+    taskIds?: number[];
+    count?: number;
+  };
+
+  if (!response.ok) {
+    throw mapBitrixApiError(data);
+  }
+
+  const count = typeof data.count === 'number' ? data.count : data.taskIds?.length ?? 0;
+  if (count === 0) {
+    throw new BitrixExportError(data.message ?? 'Bitrix24 не создал задачи', 'bitrix_api');
+  }
+
+  logMobile('bitrix tasks success', count);
+
+  return {
+    taskIds: data.taskIds ?? [],
+    count,
   };
 }

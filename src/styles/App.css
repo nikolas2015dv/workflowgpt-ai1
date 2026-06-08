@@ -478,7 +478,8 @@ body {
 /* ─── Text inputs (all workflows + modals) ─── */
 .field-input,
 .field-textarea,
-.notion-modal__field input {
+.notion-modal__field input,
+.bitrix-modal__field input {
   width: 100%;
   font-family: inherit;
   font-size: 16px;
@@ -501,7 +502,8 @@ body {
 
 .field-input::placeholder,
 .field-textarea::placeholder,
-.notion-modal__field input::placeholder {
+.notion-modal__field input::placeholder,
+.bitrix-modal__field input::placeholder {
   color: var(--field-placeholder);
   opacity: 1;
   -webkit-text-fill-color: var(--field-placeholder);
@@ -509,7 +511,8 @@ body {
 
 .field-input:focus,
 .field-textarea:focus,
-.notion-modal__field input:focus {
+.notion-modal__field input:focus,
+.bitrix-modal__field input:focus {
   outline: none;
   border-color: rgba(42, 171, 238, 0.5);
   box-shadow: 0 0 0 3px rgba(42, 171, 238, 0.15);
@@ -523,7 +526,9 @@ body {
 .field-textarea:-webkit-autofill:hover,
 .field-textarea:-webkit-autofill:focus,
 .notion-modal__field input:-webkit-autofill,
-.notion-modal__field input:-webkit-autofill:focus {
+.notion-modal__field input:-webkit-autofill:focus,
+.bitrix-modal__field input:-webkit-autofill,
+.bitrix-modal__field input:-webkit-autofill:focus {
   -webkit-text-fill-color: var(--field-text);
   caret-color: var(--field-text);
   box-shadow: 0 0 0 1000px var(--field-bg) inset;
@@ -663,9 +668,11 @@ body {
 .app-shell--telegram .field-input,
 .app-shell--telegram .field-textarea,
 .app-shell--telegram .notion-modal__field input,
+.app-shell--telegram .bitrix-modal__field input,
 html.tg-mini-app .field-input,
 html.tg-mini-app .field-textarea,
-html.tg-mini-app .notion-modal__field input {
+html.tg-mini-app .notion-modal__field input,
+html.tg-mini-app .bitrix-modal__field input {
   font-size: 16px;
   color: var(--field-text);
   -webkit-text-fill-color: var(--field-text);
@@ -674,7 +681,8 @@ html.tg-mini-app .notion-modal__field input {
 
 html.tg-mini-app .field-input::placeholder,
 html.tg-mini-app .field-textarea::placeholder,
-html.tg-mini-app .notion-modal__field input::placeholder {
+html.tg-mini-app .notion-modal__field input::placeholder,
+html.tg-mini-app .bitrix-modal__field input::placeholder {
   color: var(--field-placeholder);
   opacity: 1;
   -webkit-text-fill-color: var(--field-placeholder);
@@ -1984,6 +1992,130 @@ html.tg-mini-app #root {
 }
 
 .notion-modal__actions .btn-export {
+  flex: 1;
+}
+
+.btn-export--bitrix {
+  border-color: rgba(0, 180, 228, 0.45);
+  background: linear-gradient(135deg, #0078a8 0%, #005a82 100%);
+  color: #fff;
+}
+
+.bitrix-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: var(--space-md);
+  padding-bottom: calc(var(--space-md) + env(safe-area-inset-bottom, 0px));
+}
+
+.bitrix-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  border: none;
+  background: rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+}
+
+.bitrix-modal__panel {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 420px;
+  max-height: 85vh;
+  overflow-y: auto;
+  padding: var(--space-md);
+  border-radius: var(--radius-xl);
+  animation: notionSheetIn 0.28s var(--ease-out) both;
+}
+
+.bitrix-modal__title {
+  margin: 0 0 var(--space-xs);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.bitrix-modal__hint,
+.bitrix-modal__help {
+  margin: 0 0 var(--space-sm);
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--tg-hint);
+}
+
+.bitrix-modal__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.bitrix-modal__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.bitrix-modal__validate {
+  width: 100%;
+}
+
+.bitrix-modal__status {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.bitrix-modal__status--success {
+  color: #5fd68a;
+}
+
+.bitrix-modal__status--error {
+  color: #ff6961;
+}
+
+.bitrix-modal__mode {
+  margin: 0;
+  padding: var(--space-sm);
+  border: 1px solid var(--tg-separator);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.bitrix-modal__mode legend {
+  padding: 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--tg-hint);
+}
+
+.bitrix-modal__mode-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.bitrix-modal__mode-option input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--tg-button);
+}
+
+.bitrix-modal__actions {
+  display: flex;
+  gap: var(--space-sm);
+  margin-top: var(--space-xs);
+}
+
+.bitrix-modal__actions .btn-export {
   flex: 1;
 }
 

@@ -12,6 +12,7 @@ const { buildExport } = require('./services/exportService');
 const { createCorsOptions, parseAllowedOrigins } = require('./config/cors');
 const { listWorkflowMetadata } = require('./workflows/metadata');
 const { exportToNotion, NotionExportError } = require('./integrations/notion');
+const { validateBitrixWebhook, exportToBitrix, BitrixExportError } = require('./integrations/bitrix');
 
 dotenv.config({ path: path.join(__dirname, '.env') });
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
@@ -198,11 +199,90 @@ app.post('/api/export/notion', async (req, res) => {
   }
 });
 
+app.post('/api/export/bitrix/validate', async (req, res) => {
+  try {
+    const { domain, webhookUrl } = req.body ?? {};
+    const result = await validateBitrixWebhook({ domain, webhookUrl });
+    return jsonOk(res, {
+      message: 'Bitrix24 connection successful',
+      domain: result.domain,
+      userName: result.userName,
+    });
+  } catch (error) {
+    if (error instanceof BitrixExportError) {
+      const status =
+        error.status ??
+        (error.code === 'invalid_webhook' ? 401 : error.code === 'invalid_domain' ? 400 : 500);
+      return jsonError(res, status, error.code, error.message, { code: error.code });
+    }
+    console.error('[POST /api/export/bitrix/validate]', error);
+    return jsonError(res, 500, 'Bitrix Export Error', error.message ?? 'Validation failed');
+  }
+});
+
+app.post('/api/export/bitrix', async (req, res) => {
+  try {
+    const {
+      domain,
+      webhookUrl,
+      mode,
+      title,
+      description,
+      workflowType,
+      workflow,
+      companyName,
+      report,
+      recommendations,
+      createdAt,
+    } = req.body ?? {};
+
+    if (!report || typeof report !== 'string' || !report.trim()) {
+      return jsonError(res, 400, 'Bad Request', 'Field "report" is required', { code: 'empty_report' });
+    }
+
+    const bodyDescription =
+      typeof description === 'string' && description.trim()
+        ? description.trim()
+        : report.trim();
+
+    const entity = await exportToBitrix({
+      domain,
+      webhookUrl,
+      mode: mode === 'deal' ? 'deal' : 'lead',
+      title: title ?? `WorkflowGPT — ${workflow ?? workflowType ?? 'Report'}`,
+      description: bodyDescription,
+    });
+
+    return jsonOk(res, {
+      entityId: entity.entityId,
+      entityType: entity.entityType,
+      url: entity.url,
+      message: 'Exported successfully',
+      workflowType,
+      companyName,
+      recommendations,
+      createdAt,
+    });
+  } catch (error) {
+    if (error instanceof BitrixExportError) {
+      const status =
+        error.status ??
+        (error.code === 'invalid_webhook' ? 401 : error.code === 'invalid_domain' ? 400 : 500);
+      return jsonError(res, status, error.code, error.message, { code: error.code });
+    }
+    console.error('[POST /api/export/bitrix]', error);
+    return jsonError(res, 500, 'Bitrix Export Error', error.message ?? 'Export failed');
+  }
+});
+
 app.post('/api/export/:format', async (req, res) => {
   try {
     const format = req.params.format?.toLowerCase();
     if (format === 'notion') {
       return jsonError(res, 400, 'Bad Request', 'Use POST /api/export/notion');
+    }
+    if (format === 'bitrix') {
+      return jsonError(res, 400, 'Bad Request', 'Use POST /api/export/bitrix');
     }
     if (format !== 'pdf' && format !== 'docx') {
       return jsonError(res, 400, 'Bad Request', 'Use pdf or docx');

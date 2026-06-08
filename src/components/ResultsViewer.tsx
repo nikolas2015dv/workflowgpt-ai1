@@ -3,7 +3,9 @@ import type { WorkflowRunResult } from '../types/workflowResult';
 import { buildCopyText, sectionHasContent } from '../lib/formatResult';
 import { copyReportText, downloadReport, shareReport } from '../lib/exportApi';
 import { exportReportToNotion, NotionExportError } from '../lib/notionExport';
+import { exportReportToBitrix, BitrixExportError, type BitrixExportMode } from '../lib/bitrixExport';
 import { NotionExportModal } from './NotionExportModal';
+import { BitrixExportModal } from './BitrixExportModal';
 import { ResultSectionCard } from './ResultSectionCard';
 
 interface ResultsViewerProps {
@@ -25,6 +27,8 @@ export const ResultsViewer: React.FC<ResultsViewerProps> = ({
   const [exporting, setExporting] = useState<'pdf' | 'docx' | null>(null);
   const [notionOpen, setNotionOpen] = useState(false);
   const [notionLoading, setNotionLoading] = useState(false);
+  const [bitrixOpen, setBitrixOpen] = useState(false);
+  const [bitrixLoading, setBitrixLoading] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [exportHint, setExportHint] = useState<string | null>(null);
 
@@ -67,6 +71,41 @@ export const ResultsViewer: React.FC<ResultsViewerProps> = ({
     const ok = await shareReport(copyText, `WorkflowGPT — ${run.workflow}`);
     if (!ok) await handleCopy();
     else setExportHint('Текст отчёта готов к отправке');
+  };
+
+  const exportsBusy = !!exporting || notionLoading || bitrixLoading;
+
+  const handleBitrixExport = async (domain: string, webhookUrl: string, mode: BitrixExportMode) => {
+    setExportError(null);
+    setExportHint(null);
+    setBitrixLoading(true);
+    try {
+      const result = await exportReportToBitrix(
+        run,
+        { domain, webhookUrl },
+        { subject, createdAt, mode }
+      );
+      setBitrixOpen(false);
+      const entityLabel = result.entityType === 'deal' ? 'сделку' : 'лид';
+      setExportHint(`Экспорт в Bitrix24: ${entityLabel} #${result.entityId} создан.`);
+      if (result.url) {
+        try {
+          window.open(result.url, '_blank', 'noopener,noreferrer');
+        } catch {
+          /* Telegram WebView may block popups */
+        }
+      }
+    } catch (e) {
+      const message =
+        e instanceof BitrixExportError
+          ? e.message
+          : e instanceof Error
+            ? e.message
+            : 'Не удалось экспортировать в Bitrix24';
+      setExportError(message);
+    } finally {
+      setBitrixLoading(false);
+    }
   };
 
   const handleNotionExport = async (apiKey: string, databaseId: string) => {
@@ -166,7 +205,7 @@ export const ResultsViewer: React.FC<ResultsViewerProps> = ({
           <button
             type="button"
             className="btn-export"
-            disabled={!!exporting || notionLoading}
+            disabled={exportsBusy}
             onClick={() => void handleExport('pdf')}
           >
             {exporting === 'pdf' ? 'PDF…' : 'PDF'}
@@ -174,7 +213,7 @@ export const ResultsViewer: React.FC<ResultsViewerProps> = ({
           <button
             type="button"
             className="btn-export"
-            disabled={!!exporting || notionLoading}
+            disabled={exportsBusy}
             onClick={() => void handleExport('docx')}
           >
             {exporting === 'docx' ? 'DOCX…' : 'DOCX'}
@@ -188,7 +227,7 @@ export const ResultsViewer: React.FC<ResultsViewerProps> = ({
           <button
             type="button"
             className="btn-export btn-export--notion"
-            disabled={!!exporting || notionLoading}
+            disabled={exportsBusy}
             onClick={() => {
               setExportError(null);
               setExportHint(null);
@@ -196,6 +235,18 @@ export const ResultsViewer: React.FC<ResultsViewerProps> = ({
             }}
           >
             {notionLoading ? 'Exporting to Notion...' : 'Export to Notion'}
+          </button>
+          <button
+            type="button"
+            className="btn-export btn-export--bitrix"
+            disabled={exportsBusy}
+            onClick={() => {
+              setExportError(null);
+              setExportHint(null);
+              setBitrixOpen(true);
+            }}
+          >
+            {bitrixLoading ? 'Exporting to Bitrix24...' : 'Export to Bitrix24'}
           </button>
         </div>
         <button type="button" className="btn-primary btn-primary--outline btn-restart" onClick={onRestart}>
@@ -208,6 +259,13 @@ export const ResultsViewer: React.FC<ResultsViewerProps> = ({
         loading={notionLoading}
         onClose={() => !notionLoading && setNotionOpen(false)}
         onSubmit={(apiKey, databaseId) => void handleNotionExport(apiKey, databaseId)}
+      />
+
+      <BitrixExportModal
+        open={bitrixOpen}
+        loading={bitrixLoading}
+        onClose={() => !bitrixLoading && setBitrixOpen(false)}
+        onExport={(domain, webhookUrl, mode) => void handleBitrixExport(domain, webhookUrl, mode)}
       />
     </section>
   );

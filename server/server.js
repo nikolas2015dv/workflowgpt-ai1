@@ -13,6 +13,14 @@ const { createCorsOptions, parseAllowedOrigins } = require('./config/cors');
 const { listWorkflowMetadata } = require('./workflows/metadata');
 const { exportToNotion, NotionExportError } = require('./integrations/notion');
 const { validateBitrixWebhook, exportToBitrix, createBitrixTasks, BitrixExportError } = require('./integrations/bitrix');
+const {
+  isSupabaseConfigured,
+  checkSupabaseHealth,
+  insertWorkflowHistory,
+  listWorkflowHistory,
+  deleteWorkflowHistoryById,
+  clearWorkflowHistory,
+} = require('./integrations/supabase');
 
 dotenv.config({ path: path.join(__dirname, '.env') });
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
@@ -96,9 +104,105 @@ app.get('/api/health', (_req, res) => {
     environment: NODE_ENV,
     uptimeSeconds: Math.floor(process.uptime()),
     openaiConfigured: Boolean(process.env.OPENAI_API_KEY),
+    supabaseConfigured: isSupabaseConfigured(),
     corsOrigins: parseAllowedOrigins(),
     workflows: Object.values(WORKFLOW_IDS),
   });
+});
+
+app.get('/api/database/health', async (_req, res) => {
+  try {
+    const health = await checkSupabaseHealth();
+    if (health.ok) {
+      return res.json({ status: 'ok' });
+    }
+    return res.status(503).json({
+      status: 'unavailable',
+      message: health.reason ?? 'Supabase unreachable',
+    });
+  } catch (error) {
+    console.error('[GET /api/database/health]', error);
+    return res.status(503).json({
+      status: 'unavailable',
+      message: error.message ?? 'Database health check failed',
+    });
+  }
+});
+
+app.get('/api/history', async (_req, res) => {
+  try {
+    const result = await listWorkflowHistory();
+    if (result.skipped) {
+      return jsonOk(res, { items: [], skipped: true, message: result.reason });
+    }
+    if (!result.ok) {
+      return jsonError(res, 503, 'Database Error', result.error ?? 'Failed to load history', {
+        items: [],
+      });
+    }
+    return jsonOk(res, { items: result.items });
+  } catch (error) {
+    console.error('[GET /api/history]', error);
+    return jsonError(res, 500, 'Database Error', error.message ?? 'Failed to load history', { items: [] });
+  }
+});
+
+app.post('/api/history', async (req, res) => {
+  try {
+    const item = req.body?.item;
+    if (!item || typeof item.id !== 'string' || typeof item.workflowType !== 'string') {
+      return jsonError(res, 400, 'Bad Request', 'Field "item" with id and workflowType is required');
+    }
+
+    const result = await insertWorkflowHistory(item);
+    if (result.skipped) {
+      return jsonOk(res, { saved: false, skipped: true, message: result.reason });
+    }
+    if (!result.ok) {
+      return jsonError(res, 503, 'Database Error', result.error ?? 'Failed to save history');
+    }
+    return jsonOk(res, { saved: true, id: result.id });
+  } catch (error) {
+    console.error('[POST /api/history]', error);
+    return jsonError(res, 500, 'Database Error', error.message ?? 'Failed to save history');
+  }
+});
+
+app.delete('/api/history/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id) {
+      return jsonError(res, 400, 'Bad Request', 'History id is required');
+    }
+
+    const result = await deleteWorkflowHistoryById(id);
+    if (result.skipped) {
+      return jsonOk(res, { deleted: false, skipped: true, message: result.reason });
+    }
+    if (!result.ok) {
+      return jsonError(res, 503, 'Database Error', result.error ?? 'Failed to delete history item');
+    }
+    return jsonOk(res, { deleted: result.deleted });
+  } catch (error) {
+    console.error('[DELETE /api/history/:id]', error);
+    return jsonError(res, 500, 'Database Error', error.message ?? 'Failed to delete history item');
+  }
+});
+
+app.delete('/api/history', async (_req, res) => {
+  try {
+    const result = await clearWorkflowHistory();
+    if (result.skipped) {
+      return jsonOk(res, { cleared: false, skipped: true, message: result.reason });
+    }
+    if (!result.ok) {
+      return jsonError(res, 503, 'Database Error', result.error ?? 'Failed to clear history');
+    }
+    return jsonOk(res, { cleared: true });
+  } catch (error) {
+    console.error('[DELETE /api/history]', error);
+    return jsonError(res, 500, 'Database Error', error.message ?? 'Failed to clear history');
+  }
 });
 
 app.get('/api/workflows', (_req, res) => {

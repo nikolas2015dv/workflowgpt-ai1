@@ -1,11 +1,23 @@
 import { RESULT_SECTIONS } from '../config/pipelineSteps';
 import { WORKFLOW_IDS } from '../config/workflows';
 import { buildHistoryTitle } from '../lib/historySubject';
+import {
+  clearWorkflowHistoryDatabase,
+  deleteWorkflowHistory,
+  loadWorkflowHistory,
+  saveWorkflowToDatabase,
+} from '../lib/workflowDatabase';
 import type { HistoryItem, SaveHistoryInput } from '../types/history';
 import type { WorkflowRunResult } from '../types/workflowResult';
+import {
+  clearHistoryLocalStorage,
+  MAX_HISTORY_ITEMS,
+  readHistoryFromLocalStorage,
+  writeHistoryToLocalStorage,
+  HISTORY_STORAGE_KEY,
+} from './historyLocalStorage';
 
-export const HISTORY_STORAGE_KEY = 'workflowgpt_history';
-export const MAX_HISTORY_ITEMS = 100;
+export { HISTORY_STORAGE_KEY, MAX_HISTORY_ITEMS };
 
 function createHistoryId(): string {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -30,94 +42,13 @@ function getSectionsForWorkflowType(workflowType: string) {
   return RESULT_SECTIONS[workflowTypeToTitle(workflowType)] ?? [];
 }
 
-function isWorkflowRunResult(value: unknown): value is WorkflowRunResult {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    typeof (value as WorkflowRunResult).workflow === 'string' &&
-    typeof (value as WorkflowRunResult).reply === 'string' &&
-    Array.isArray((value as WorkflowRunResult).sections)
-  );
-}
-
-function normalizeLegacyItem(raw: Record<string, unknown>): HistoryItem | null {
-  if (
-    typeof raw.id !== 'string' ||
-    typeof raw.workflowType !== 'string' ||
-    typeof raw.createdAt !== 'number'
-  ) {
-    return null;
-  }
-
-  const legacyReport = typeof raw.report === 'string' ? raw.report : '';
-  const title = typeof raw.title === 'string' ? raw.title : 'WorkflowGPT Report';
-  const workflowTitle = workflowTypeToTitle(raw.workflowType);
-
-  if (isWorkflowRunResult(raw.result)) {
-    return {
-      id: raw.id,
-      workflowType: raw.workflowType,
-      title:
-        typeof raw.title === 'string'
-          ? raw.title
-          : buildHistoryTitle(raw.workflowType, (raw.subject as string) ?? title),
-      subject: typeof raw.subject === 'string' ? raw.subject : title,
-      createdAt: raw.createdAt,
-      result: raw.result,
-    };
-  }
-
-  if (!legacyReport.trim()) return null;
-
-  const result: WorkflowRunResult = {
-    workflow: workflowTitle,
-    workflowSlug: raw.workflowType,
-    result: {},
-    reply: legacyReport,
-    report: legacyReport,
-    sections: getSectionsForWorkflowType(raw.workflowType),
-  };
-
-  return {
-    id: raw.id,
-    workflowType: raw.workflowType,
-    title,
-    subject: typeof raw.subject === 'string' ? raw.subject : title,
-    createdAt: raw.createdAt,
-    result,
-    report: legacyReport,
-  };
-}
-
-function readRawItems(): HistoryItem[] {
-  try {
-    const raw = localStorage.getItem(HISTORY_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return [];
-
-    return parsed
-      .map((item) =>
-        typeof item === 'object' && item !== null ? normalizeLegacyItem(item as Record<string, unknown>) : null
-      )
-      .filter((item): item is HistoryItem => item !== null)
-      .sort((a, b) => b.createdAt - a.createdAt);
-  } catch {
-    return [];
-  }
-}
-
-function writeItems(items: HistoryItem[]): void {
-  try {
-    const payload = items.slice(0, MAX_HISTORY_ITEMS).map(({ report: _legacy, ...item }) => item);
-    localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(payload));
-  } catch {
-    /* private mode / quota */
-  }
-}
-
 export function getHistoryItems(): HistoryItem[] {
-  return readRawItems();
+  return readHistoryFromLocalStorage();
+}
+
+export async function getHistoryItemsAsync(): Promise<HistoryItem[]> {
+  const result = await loadWorkflowHistory();
+  return result.items;
 }
 
 export function saveHistoryItem(input: SaveHistoryInput): HistoryItem {
@@ -134,8 +65,12 @@ export function saveHistoryItem(input: SaveHistoryInput): HistoryItem {
     result: input.result,
   };
 
-  const items = readRawItems();
-  writeItems([item, ...items]);
+  const items = readHistoryFromLocalStorage();
+  writeHistoryToLocalStorage([item, ...items]);
+
+  void saveWorkflowToDatabase(item).catch(() => {
+    /* database optional — localStorage is primary fallback */
+  });
 
   console.log('[History] Saved', { id: item.id, workflowType: item.workflowType, subject: item.subject });
   return item;
@@ -153,21 +88,19 @@ export function historyItemToRunResult(item: HistoryItem): WorkflowRunResult {
 }
 
 export function deleteHistoryItem(id: string): boolean {
-  const items = readRawItems();
+  const items = readHistoryFromLocalStorage();
   const next = items.filter((item) => item.id !== id);
   if (next.length === items.length) return false;
 
-  writeItems(next);
+  writeHistoryToLocalStorage(next);
+  void deleteWorkflowHistory(id).catch(() => {});
   console.log('[History] Deleted', { id });
   return true;
 }
 
 export function clearHistory(): void {
-  try {
-    localStorage.removeItem(HISTORY_STORAGE_KEY);
-  } catch {
-    /* ignore */
-  }
+  clearHistoryLocalStorage();
+  void clearWorkflowHistoryDatabase().catch(() => {});
   console.log('[History] Cleared');
 }
 

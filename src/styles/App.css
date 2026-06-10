@@ -1805,6 +1805,28 @@ html.tg-mini-app #root {
   padding-bottom: var(--space-md);
 }
 
+.history-loading {
+  padding: var(--space-lg);
+  text-align: center;
+}
+
+.history-loading__text {
+  margin: 0;
+  font-size: 14px;
+  color: var(--tg-hint);
+}
+
+.history-load-error {
+  margin: 0 0 var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  font-size: 13px;
+  line-height: 1.4;
+  color: #ffb86a;
+  background: rgba(255, 184, 106, 0.08);
+  border: 1px solid rgba(255, 184, 106, 0.2);
+  border-radius: var(--radius-md);
+}
+
 .history-list {
   margin: 0;
   padding: 0;

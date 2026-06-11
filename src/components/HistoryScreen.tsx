@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import type { HistoryItem } from '../types/history';
 import type { WorkflowHistorySource } from '../types/database';
 import { loadWorkflowHistory } from '../lib/workflowDatabase';
+import { useAuth } from '../hooks/useAuth';
 import {
   clearHistory,
   deleteHistoryItem,
@@ -15,12 +16,14 @@ interface HistoryScreenProps {
 }
 
 export const HistoryScreen: React.FC<HistoryScreenProps> = ({ onOpen }) => {
+  const { isLoading: authLoading, user } = useAuth();
   const [items, setItems] = useState<HistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [source, setSource] = useState<WorkflowHistorySource>('local');
 
   const refresh = useCallback(async () => {
+    if (authLoading) return;
     setLoading(true);
     setLoadError(null);
     try {
@@ -37,7 +40,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ onOpen }) => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [authLoading, user?.id]);
 
   useEffect(() => {
     void refresh();

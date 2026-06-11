@@ -1,6 +1,7 @@
 import { RESULT_SECTIONS } from '../config/pipelineSteps';
 import { WORKFLOW_IDS } from '../config/workflows';
 import { buildHistoryTitle } from '../lib/historySubject';
+import { getAuthUserId } from '../lib/authSession';
 import {
   clearWorkflowHistoryDatabase,
   deleteWorkflowHistory,
@@ -16,6 +17,12 @@ import {
   writeHistoryToLocalStorage,
   HISTORY_STORAGE_KEY,
 } from './historyLocalStorage';
+
+export {
+  saveWorkflowToDatabase,
+  loadWorkflowHistory,
+  deleteWorkflowHistory,
+} from '../lib/workflowDatabase';
 
 export { HISTORY_STORAGE_KEY, MAX_HISTORY_ITEMS };
 
@@ -42,8 +49,12 @@ function getSectionsForWorkflowType(workflowType: string) {
   return RESULT_SECTIONS[workflowTypeToTitle(workflowType)] ?? [];
 }
 
+function getScopedUserId(): string | null {
+  return getAuthUserId();
+}
+
 export function getHistoryItems(): HistoryItem[] {
-  return readHistoryFromLocalStorage();
+  return readHistoryFromLocalStorage(getScopedUserId());
 }
 
 export async function getHistoryItemsAsync(): Promise<HistoryItem[]> {
@@ -55,6 +66,7 @@ export function saveHistoryItem(input: SaveHistoryInput): HistoryItem {
   const workflowType = input.workflowType.trim();
   const subject = input.subject.trim() || 'WorkflowGPT';
   const title = buildHistoryTitle(workflowType, subject);
+  const userId = getScopedUserId();
 
   const item: HistoryItem = {
     id: createHistoryId(),
@@ -65,8 +77,8 @@ export function saveHistoryItem(input: SaveHistoryInput): HistoryItem {
     result: input.result,
   };
 
-  const items = readHistoryFromLocalStorage();
-  writeHistoryToLocalStorage([item, ...items]);
+  const items = readHistoryFromLocalStorage(userId);
+  writeHistoryToLocalStorage([item, ...items], userId);
 
   void saveWorkflowToDatabase(item).catch(() => {
     /* database optional — localStorage is primary fallback */
@@ -88,18 +100,20 @@ export function historyItemToRunResult(item: HistoryItem): WorkflowRunResult {
 }
 
 export function deleteHistoryItem(id: string): boolean {
-  const items = readHistoryFromLocalStorage();
+  const userId = getScopedUserId();
+  const items = readHistoryFromLocalStorage(userId);
   const next = items.filter((item) => item.id !== id);
   if (next.length === items.length) return false;
 
-  writeHistoryToLocalStorage(next);
+  writeHistoryToLocalStorage(next, userId);
   void deleteWorkflowHistory(id).catch(() => {});
   console.log('[History] Deleted', { id });
   return true;
 }
 
 export function clearHistory(): void {
-  clearHistoryLocalStorage();
+  const userId = getScopedUserId();
+  clearHistoryLocalStorage(userId);
   void clearWorkflowHistoryDatabase().catch(() => {});
   console.log('[History] Cleared');
 }

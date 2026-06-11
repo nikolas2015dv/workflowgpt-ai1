@@ -7,6 +7,10 @@ import type { WorkflowRunResult } from '../types/workflowResult';
 export const HISTORY_STORAGE_KEY = 'workflowgpt_history';
 export const MAX_HISTORY_ITEMS = 100;
 
+export function getHistoryStorageKey(userId?: string | null): string {
+  return userId ? `${HISTORY_STORAGE_KEY}_${userId}` : HISTORY_STORAGE_KEY;
+}
+
 function workflowTypeToTitle(workflowType: string): string {
   const map: Record<string, string> = {
     competitors: WORKFLOW_IDS.COMPETITORS,
@@ -82,9 +86,9 @@ function normalizeLegacyItem(raw: Record<string, unknown>): HistoryItem | null {
   };
 }
 
-export function readHistoryFromLocalStorage(): HistoryItem[] {
+export function readHistoryFromLocalStorage(userId?: string | null): HistoryItem[] {
   try {
-    const raw = localStorage.getItem(HISTORY_STORAGE_KEY);
+    const raw = localStorage.getItem(getHistoryStorageKey(userId));
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
@@ -100,18 +104,18 @@ export function readHistoryFromLocalStorage(): HistoryItem[] {
   }
 }
 
-export function writeHistoryToLocalStorage(items: HistoryItem[]): void {
+export function writeHistoryToLocalStorage(items: HistoryItem[], userId?: string | null): void {
   try {
     const payload = items.slice(0, MAX_HISTORY_ITEMS).map(({ report: _legacy, ...item }) => item);
-    localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(payload));
+    localStorage.setItem(getHistoryStorageKey(userId), JSON.stringify(payload));
   } catch {
     /* private mode / quota */
   }
 }
 
-export function clearHistoryLocalStorage(): void {
+export function clearHistoryLocalStorage(userId?: string | null): void {
   try {
-    localStorage.removeItem(HISTORY_STORAGE_KEY);
+    localStorage.removeItem(getHistoryStorageKey(userId));
   } catch {
     /* ignore */
   }

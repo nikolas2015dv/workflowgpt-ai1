@@ -21,6 +21,13 @@ const {
   deleteWorkflowHistoryById,
   clearWorkflowHistory,
 } = require('./integrations/supabase');
+const {
+  upsertUser,
+  getUserById,
+  incrementUsage,
+  getUsageStats,
+  isSupabaseConfigured: isUsersDbConfigured,
+} = require('./integrations/users');
 
 dotenv.config({ path: path.join(__dirname, '.env') });
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
@@ -43,6 +50,22 @@ function jsonError(res, status, error, message, extra = {}) {
 
 function jsonOk(res, payload) {
   return res.json({ ok: true, status: 'ok', ...payload });
+}
+
+function parseUserIdHeader(req) {
+  const raw = req.header('X-User-Id');
+  if (!raw || typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function requireUserId(req, res, next) {
+  const userId = parseUserIdHeader(req);
+  if (!userId) {
+    return jsonError(res, 401, 'Unauthorized', 'X-User-Id header is required');
+  }
+  req.userId = userId;
+  return next();
 }
 
 function handleOpenAiError(error, res) {
@@ -110,6 +133,38 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
+app.post('/api/auth/telegram', async (req, res) => {
+  try {
+    if (!isUsersDbConfigured()) {
+      return jsonError(res, 503, 'not_configured', 'Supabase is not configured on the server');
+    }
+
+    const payload = req.body ?? {};
+    const user = await upsertUser(payload);
+    return jsonOk(res, { user });
+  } catch (error) {
+    console.error('[POST /api/auth/telegram]', error);
+    const status = error.code === 'not_configured' ? 503 : 400;
+    return jsonError(res, status, error.code ?? 'auth_error', error.message ?? 'Telegram auth failed');
+  }
+});
+
+app.get('/api/auth/me', async (req, res) => {
+  try {
+    const userId = parseUserIdHeader(req);
+    if (!userId) {
+      return jsonError(res, 401, 'Unauthorized', 'X-User-Id header is required');
+    }
+
+    const stats = await getUsageStats(userId);
+    return jsonOk(res, { user: stats.user, usage: stats });
+  } catch (error) {
+    console.error('[GET /api/auth/me]', error);
+    const status = error.code === 'user_not_found' ? 404 : error.code === 'not_configured' ? 503 : 500;
+    return jsonError(res, status, error.code ?? 'auth_error', error.message ?? 'Failed to load user');
+  }
+});
+
 app.get('/api/database/health', async (_req, res) => {
   try {
     const health = await checkSupabaseHealth();
@@ -129,9 +184,9 @@ app.get('/api/database/health', async (_req, res) => {
   }
 });
 
-app.get('/api/history', async (_req, res) => {
+app.get('/api/history', requireUserId, async (req, res) => {
   try {
-    const result = await listWorkflowHistory();
+    const result = await listWorkflowHistory(req.userId);
     if (result.skipped) {
       return jsonOk(res, { items: [], skipped: true, message: result.reason });
     }
@@ -147,35 +202,48 @@ app.get('/api/history', async (_req, res) => {
   }
 });
 
-app.post('/api/history', async (req, res) => {
+app.post('/api/history', requireUserId, async (req, res) => {
   try {
     const item = req.body?.item;
     if (!item || typeof item.id !== 'string' || typeof item.workflowType !== 'string') {
       return jsonError(res, 400, 'Bad Request', 'Field "item" with id and workflowType is required');
     }
 
-    const result = await insertWorkflowHistory(item);
+    const user = await getUserById(req.userId);
+    if (!user) {
+      return jsonError(res, 404, 'user_not_found', 'User not found');
+    }
+
+    const result = await insertWorkflowHistory(item, req.userId);
     if (result.skipped) {
       return jsonOk(res, { saved: false, skipped: true, message: result.reason });
     }
     if (!result.ok) {
       return jsonError(res, 503, 'Database Error', result.error ?? 'Failed to save history');
     }
-    return jsonOk(res, { saved: true, id: result.id });
+
+    let updatedUser = user;
+    try {
+      updatedUser = await incrementUsage(req.userId, item.workflowType);
+    } catch (usageError) {
+      console.error('[POST /api/history] usage increment failed', usageError);
+    }
+
+    return jsonOk(res, { saved: true, id: result.id, user: updatedUser });
   } catch (error) {
     console.error('[POST /api/history]', error);
     return jsonError(res, 500, 'Database Error', error.message ?? 'Failed to save history');
   }
 });
 
-app.delete('/api/history/:id', async (req, res) => {
+app.delete('/api/history/:id', requireUserId, async (req, res) => {
   try {
     const { id } = req.params;
     if (!id) {
       return jsonError(res, 400, 'Bad Request', 'History id is required');
     }
 
-    const result = await deleteWorkflowHistoryById(id);
+    const result = await deleteWorkflowHistoryById(id, req.userId);
     if (result.skipped) {
       return jsonOk(res, { deleted: false, skipped: true, message: result.reason });
     }
@@ -189,9 +257,9 @@ app.delete('/api/history/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/history', async (_req, res) => {
+app.delete('/api/history', requireUserId, async (req, res) => {
   try {
-    const result = await clearWorkflowHistory();
+    const result = await clearWorkflowHistory(req.userId);
     if (result.skipped) {
       return jsonOk(res, { cleared: false, skipped: true, message: result.reason });
     }

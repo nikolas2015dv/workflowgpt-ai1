@@ -76,9 +76,9 @@ function rowToHistoryItem(row) {
   };
 }
 
-function historyItemToRow(item) {
+function historyItemToRow(item, userId) {
   const report = buildReportText(item.result);
-  return {
+  const row = {
     id: item.id,
     created_at: new Date(item.createdAt).toISOString(),
     workflow_type: item.workflowType,
@@ -89,6 +89,10 @@ function historyItemToRow(item) {
     recommendations: extractRecommendations(item.result),
     raw_data: { result: item.result },
   };
+  if (userId) {
+    row.user_id = userId;
+  }
+  return row;
 }
 
 async function checkSupabaseHealth() {
@@ -105,13 +109,13 @@ async function checkSupabaseHealth() {
   return { ok: true };
 }
 
-async function insertWorkflowHistory(item) {
+async function insertWorkflowHistory(item, userId) {
   const client = getSupabaseAdmin();
   if (!client) {
     return { ok: false, skipped: true, reason: 'not_configured' };
   }
 
-  const row = historyItemToRow(item);
+  const row = historyItemToRow(item, userId);
   const { data, error } = await client.from(TABLE).upsert(row, { onConflict: 'id' }).select('id').single();
 
   if (error) {
@@ -121,15 +125,20 @@ async function insertWorkflowHistory(item) {
   return { ok: true, id: data?.id ?? row.id };
 }
 
-async function listWorkflowHistory(limit = MAX_HISTORY_ITEMS) {
+async function listWorkflowHistory(userId, limit = MAX_HISTORY_ITEMS) {
   const client = getSupabaseAdmin();
   if (!client) {
     return { ok: false, skipped: true, items: [], reason: 'not_configured' };
   }
 
+  if (!userId) {
+    return { ok: false, skipped: true, items: [], reason: 'user_required' };
+  }
+
   const { data, error } = await client
     .from(TABLE)
     .select('*')
+    .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(limit);
 
@@ -143,13 +152,21 @@ async function listWorkflowHistory(limit = MAX_HISTORY_ITEMS) {
   };
 }
 
-async function deleteWorkflowHistoryById(id) {
+async function deleteWorkflowHistoryById(id, userId) {
   const client = getSupabaseAdmin();
   if (!client) {
     return { ok: false, skipped: true, reason: 'not_configured' };
   }
 
-  const { error, count } = await client.from(TABLE).delete({ count: 'exact' }).eq('id', id);
+  if (!userId) {
+    return { ok: false, skipped: true, reason: 'user_required' };
+  }
+
+  const { error, count } = await client
+    .from(TABLE)
+    .delete({ count: 'exact' })
+    .eq('id', id)
+    .eq('user_id', userId);
   if (error) {
     return { ok: false, error: error.message };
   }
@@ -157,13 +174,17 @@ async function deleteWorkflowHistoryById(id) {
   return { ok: true, deleted: (count ?? 0) > 0 };
 }
 
-async function clearWorkflowHistory() {
+async function clearWorkflowHistory(userId) {
   const client = getSupabaseAdmin();
   if (!client) {
     return { ok: false, skipped: true, reason: 'not_configured' };
   }
 
-  const { error } = await client.from(TABLE).delete().neq('id', '00000000-0000-0000-0000-000000000000');
+  if (!userId) {
+    return { ok: false, skipped: true, reason: 'user_required' };
+  }
+
+  const { error } = await client.from(TABLE).delete().eq('user_id', userId);
   if (error) {
     return { ok: false, error: error.message };
   }

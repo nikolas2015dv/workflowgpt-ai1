@@ -1,6 +1,6 @@
 import React from 'react';
 
-export type AppTab = 'workflows' | 'history';
+export type AppTab = 'workflows' | 'history' | 'profile';
 
 interface AppTabBarProps {
   activeTab: AppTab;
@@ -23,6 +23,13 @@ export const AppTabBar: React.FC<AppTabBarProps> = ({ activeTab, onChange }) => 
         onClick={() => onChange('history')}
       >
         History
+      </button>
+      <button
+        type="button"
+        className={`app-tabs__item${activeTab === 'profile' ? ' app-tabs__item--active' : ''}`}
+        onClick={() => onChange('profile')}
+      >
+        Profile
       </button>
     </nav>
   );

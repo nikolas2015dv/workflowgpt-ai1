@@ -3,10 +3,12 @@ import { WorkflowGallery } from './components/WorkflowGallery';
 import { TaskExecutor } from './components/TaskExecutor';
 import { ResultsViewer } from './components/ResultsViewer';
 import { HistoryScreen } from './components/HistoryScreen';
+import { ProfileScreen } from './components/ProfileScreen';
 import { AppTabBar, type AppTab } from './components/AppTabBar';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { AppFooter } from './components/AppFooter';
 import { useTelegram } from './hooks/useTelegram';
+import { useAuth } from './hooks/useAuth';
 import { buildWorkflowSubject, type HistorySubjectContext } from './lib/historySubject';
 import { saveHistoryItem, historyItemToRunResult } from './services/historyService';
 import type { WorkflowRunResult } from './types/workflowResult';
@@ -16,7 +18,8 @@ type AppState = 'gallery' | 'executor' | 'results';
 type ResultsReturnTo = 'gallery' | 'history';
 
 const App: React.FC = () => {
-  const { user, isTelegram, isReady } = useTelegram();
+  const { user: tgUser, isTelegram, isReady } = useTelegram();
+  const { user: appUser, refreshUser } = useAuth();
   const [activeTab, setActiveTab] = useState<AppTab>('workflows');
   const [state, setState] = useState<AppState>('gallery');
   const [selectedWorkflow, setSelectedWorkflow] = useState<string | null>(null);
@@ -46,6 +49,7 @@ const App: React.FC = () => {
       subject,
       result,
     });
+    void refreshUser();
 
     setRunResult(result);
     setResultSubject(subject);
@@ -66,7 +70,7 @@ const App: React.FC = () => {
 
   const handleTabChange = (tab: AppTab) => {
     setActiveTab(tab);
-    if (tab === 'history') {
+    if (tab === 'history' || tab === 'profile') {
       navigate('gallery');
     } else if (state !== 'executor' && state !== 'results') {
       navigate('gallery');
@@ -105,9 +109,13 @@ const App: React.FC = () => {
         ? selectedWorkflow ?? ''
         : activeTab === 'history'
           ? 'History'
-          : 'Автоматизация с AI';
+          : activeTab === 'profile'
+            ? 'Profile'
+            : 'Автоматизация с AI';
 
-  const avatarLetter = user.first_name.charAt(0).toUpperCase();
+  const headerUser = appUser ?? tgUser;
+  const avatarLetter = headerUser.first_name.charAt(0).toUpperCase();
+  const headerPhoto = appUser?.photo_url ?? tgUser.photo_url;
   const showMainButtonPad = isTelegram && state === 'executor';
   const showResultsPad = state === 'results';
   const showTabBar = state === 'gallery';
@@ -147,14 +155,21 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          <div className="app-header__user" title={user.username ? `@${user.username}` : user.first_name}>
-            <span className="app-header__avatar" aria-hidden="true">
-              {avatarLetter}
-            </span>
+          <div
+            className="app-header__user"
+            title={headerUser.username ? `@${headerUser.username}` : headerUser.first_name}
+          >
+            {headerPhoto ? (
+              <img className="app-header__avatar app-header__avatar--img" src={headerPhoto} alt="" />
+            ) : (
+              <span className="app-header__avatar" aria-hidden="true">
+                {avatarLetter}
+              </span>
+            )}
             <span className="app-header__user-info">
-              <span className="app-header__name">{user.first_name}</span>
-              {isTelegram && user.username ? (
-                <span className="app-header__username">@{user.username}</span>
+              <span className="app-header__name">{headerUser.first_name}</span>
+              {headerUser.username ? (
+                <span className="app-header__username">@{headerUser.username}</span>
               ) : (
                 <span className="app-header__username app-header__username--muted">
                   {!isReady ? '…' : isTelegram ? 'без username' : 'браузер'}
@@ -174,6 +189,7 @@ const App: React.FC = () => {
             {state === 'gallery' && activeTab === 'history' && (
               <HistoryScreen onOpen={handleOpenHistoryItem} />
             )}
+            {state === 'gallery' && activeTab === 'profile' && <ProfileScreen />}
             {state === 'executor' && selectedWorkflow && (
               <TaskExecutor
                 workflow={selectedWorkflow}

@@ -58,8 +58,8 @@ function createCorsOptions() {
       console.warn('[CORS] blocked origin:', origin, 'allowed:', allowed.join(', '));
       callback(null, false);
     },
-    methods: ['GET', 'POST', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Accept'],
+    methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Accept', 'X-User-Id'],
     exposedHeaders: ['Content-Disposition'],
     credentials: true,
     maxAge: 86400,

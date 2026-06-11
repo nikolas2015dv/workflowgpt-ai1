@@ -1780,12 +1780,12 @@ html.tg-mini-app #root {
 
 .app-tabs__item {
   flex: 1;
-  padding: 12px 16px;
+  padding: 11px 10px;
   border: none;
   border-radius: calc(var(--radius-xl) - 4px);
   background: transparent;
   color: var(--tg-hint);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   transition: background var(--transition-fast), color var(--transition-fast);
@@ -1913,6 +1913,147 @@ html.tg-mini-app #root {
 .history-clear {
   width: 100%;
   margin-top: var(--space-md);
+}
+
+/* ─── Profile ─── */
+.profile-screen {
+  padding-bottom: var(--space-md);
+}
+
+.profile-loading,
+.profile-empty {
+  padding: var(--space-lg);
+  text-align: center;
+}
+
+.profile-empty__title {
+  margin: 0 0 var(--space-xs);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.profile-empty__desc {
+  margin: 0;
+  font-size: 13px;
+  color: var(--tg-hint);
+}
+
+.profile-error {
+  margin: 0 0 var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  font-size: 13px;
+  color: #ff6961;
+  background: rgba(255, 105, 97, 0.08);
+  border: 1px solid rgba(255, 105, 97, 0.2);
+  border-radius: var(--radius-md);
+}
+
+.profile-card {
+  padding: var(--space-md);
+}
+
+.profile-card__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  margin-bottom: var(--space-md);
+}
+
+.profile-card__avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.profile-card__avatar--fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(42, 171, 238, 0.2);
+  color: var(--tg-text);
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.profile-card__name {
+  margin: 0 0 4px;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.profile-card__username {
+  margin: 0;
+  font-size: 14px;
+  color: var(--tg-link);
+}
+
+.profile-card__username--muted {
+  color: var(--tg-hint);
+}
+
+.profile-stats {
+  margin: 0 0 var(--space-md);
+  display: grid;
+  gap: var(--space-sm);
+}
+
+.profile-stats__row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: 10px 0;
+  border-bottom: 1px solid var(--tg-separator);
+}
+
+.profile-stats__row:last-child {
+  border-bottom: none;
+}
+
+.profile-stats__row dt {
+  margin: 0;
+  font-size: 13px;
+  color: var(--tg-hint);
+}
+
+.profile-stats__row dd {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: right;
+}
+
+.profile-role {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.profile-role--owner {
+  background: rgba(255, 214, 102, 0.15);
+  color: #ffd666;
+}
+
+.profile-role--pro {
+  background: rgba(42, 171, 238, 0.15);
+  color: #6ab2f2;
+}
+
+.profile-role--free {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--tg-hint);
+}
+
+.profile-refresh {
+  width: 100%;
+}
+
+.app-header__avatar--img {
+  object-fit: cover;
 }
 
 .btn-export--danger {

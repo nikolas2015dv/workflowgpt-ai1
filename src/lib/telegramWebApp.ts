@@ -2,6 +2,8 @@ export interface TelegramUser {
   id: number;
   username: string;
   first_name: string;
+  last_name?: string;
+  photo_url?: string;
 }
 
 export const BROWSER_FALLBACK_USER: TelegramUser = {
@@ -40,6 +42,8 @@ export function parseTelegramUser(): TelegramUser | null {
     id: raw.id,
     username: raw.username ?? '',
     first_name: raw.first_name?.trim() || 'Пользователь',
+    last_name: raw.last_name?.trim() || undefined,
+    photo_url: raw.photo_url?.trim() || undefined,
   };
 }
 

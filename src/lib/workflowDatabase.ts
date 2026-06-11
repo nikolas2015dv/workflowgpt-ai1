@@ -1,6 +1,7 @@
 import type { HistoryItem } from '../types/history';
 import type { DatabaseHealthResponse, LoadWorkflowHistoryResult } from '../types/database';
 import { apiUrl, mapFetchError } from './api';
+import { getAuthUserId } from './authSession';
 import { readHistoryFromLocalStorage } from '../services/historyLocalStorage';
 import { logError, logMobile } from './mobileDebug';
 
@@ -12,11 +13,23 @@ async function parseJson<T>(response: Response): Promise<T> {
   }
 }
 
+function buildAuthHeaders(extra?: Record<string, string>): Record<string, string> {
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+    ...extra,
+  };
+  const userId = getAuthUserId();
+  if (userId) {
+    headers['X-User-Id'] = userId;
+  }
+  return headers;
+}
+
 export async function checkDatabaseHealth(): Promise<DatabaseHealthResponse> {
   try {
     const response = await fetch(apiUrl('/api/database/health'), {
       method: 'GET',
-      headers: { Accept: 'application/json' },
+      headers: buildAuthHeaders(),
     });
     const data = await parseJson<DatabaseHealthResponse>(response);
     if (response.ok && data.status === 'ok') {
@@ -36,11 +49,14 @@ export async function checkDatabaseHealth(): Promise<DatabaseHealthResponse> {
 }
 
 export async function saveWorkflowToDatabase(item: HistoryItem): Promise<boolean> {
+  const userId = getAuthUserId();
+  if (!userId) return false;
+
   try {
     logMobile('history db save', item.id);
     const response = await fetch(apiUrl('/api/history'), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      headers: buildAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ item }),
     });
 
@@ -59,10 +75,19 @@ export async function saveWorkflowToDatabase(item: HistoryItem): Promise<boolean
 }
 
 export async function loadWorkflowHistory(): Promise<LoadWorkflowHistoryResult> {
+  const userId = getAuthUserId();
+
+  if (!userId) {
+    return {
+      items: readHistoryFromLocalStorage(),
+      source: 'local',
+    };
+  }
+
   try {
     const response = await fetch(apiUrl('/api/history'), {
       method: 'GET',
-      headers: { Accept: 'application/json' },
+      headers: buildAuthHeaders(),
     });
 
     const data = await parseJson<{ items?: HistoryItem[]; skipped?: boolean; message?: string }>(response);
@@ -70,7 +95,7 @@ export async function loadWorkflowHistory(): Promise<LoadWorkflowHistoryResult> 
     if (response.ok) {
       if (data.skipped) {
         return {
-          items: readHistoryFromLocalStorage(),
+          items: readHistoryFromLocalStorage(userId),
           source: 'local',
         };
       }
@@ -88,25 +113,27 @@ export async function loadWorkflowHistory(): Promise<LoadWorkflowHistoryResult> 
     }
   } catch (e) {
     logError('history-db-load', e);
-    const localItems = readHistoryFromLocalStorage();
     return {
-      items: localItems,
+      items: readHistoryFromLocalStorage(userId),
       source: 'local',
       error: e instanceof Error ? e.message : 'Database unavailable',
     };
   }
 
   return {
-    items: readHistoryFromLocalStorage(),
+    items: readHistoryFromLocalStorage(userId),
     source: 'local',
   };
 }
 
 export async function deleteWorkflowHistory(id: string): Promise<boolean> {
+  const userId = getAuthUserId();
+  if (!userId) return false;
+
   try {
     const response = await fetch(apiUrl(`/api/history/${encodeURIComponent(id)}`), {
       method: 'DELETE',
-      headers: { Accept: 'application/json' },
+      headers: buildAuthHeaders(),
     });
 
     if (response.ok) return true;
@@ -120,10 +147,13 @@ export async function deleteWorkflowHistory(id: string): Promise<boolean> {
 }
 
 export async function clearWorkflowHistoryDatabase(): Promise<boolean> {
+  const userId = getAuthUserId();
+  if (!userId) return false;
+
   try {
     const response = await fetch(apiUrl('/api/history'), {
       method: 'DELETE',
-      headers: { Accept: 'application/json' },
+      headers: buildAuthHeaders(),
     });
 
     if (response.ok) return true;

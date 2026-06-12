@@ -909,6 +909,23 @@ html.tg-mini-app #root {
   gap: var(--space-md);
 }
 
+.task-executor__usage-hint {
+  margin: 0;
+  padding: var(--space-sm) var(--space-md);
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--tg-hint);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--tg-separator);
+  border-radius: var(--radius-md);
+}
+
+.task-executor__usage-hint--blocked {
+  color: #ff6961;
+  background: rgba(255, 105, 97, 0.08);
+  border-color: rgba(255, 105, 97, 0.25);
+}
+
 .btn-back {
   align-self: flex-start;
   margin-bottom: calc(-1 * var(--space-xs));

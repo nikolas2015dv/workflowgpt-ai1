@@ -26,8 +26,10 @@ const {
   getUserById,
   incrementUsage,
   getUsageStats,
+  canUserRunWorkflow,
   isSupabaseConfigured: isUsersDbConfigured,
 } = require('./integrations/users');
+const { getSubscriptionForUser, changeSubscription } = require('./integrations/subscriptions');
 
 dotenv.config({ path: path.join(__dirname, '.env') });
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
@@ -66,6 +68,46 @@ function requireUserId(req, res, next) {
   }
   req.userId = userId;
   return next();
+}
+
+function enforceRunLimit(req, res, next) {
+  if (!isSupabaseConfigured()) {
+    return next();
+  }
+
+  const userId = parseUserIdHeader(req);
+  if (!userId) {
+    return jsonError(res, 401, 'Unauthorized', 'X-User-Id header is required');
+  }
+
+  Promise.all([getUserById(userId), getSubscriptionForUser(userId).catch(() => null)])
+    .then(([user, subscriptionInfo]) => {
+      if (!user) {
+        return jsonError(res, 404, 'user_not_found', 'User not found');
+      }
+
+      const effectiveUser = subscriptionInfo
+        ? { ...user, role: subscriptionInfo.effectivePlan, monthly_runs: subscriptionInfo.quota.monthly_runs }
+        : user;
+
+      const check = canUserRunWorkflow(effectiveUser);
+      if (!check.allowed) {
+        return jsonError(res, 429, 'limit_exceeded', check.message ?? 'Monthly run limit reached', {
+          code: 'limit_exceeded',
+          limit: check.limit,
+          remaining: check.remaining ?? 0,
+          role: effectiveUser.role,
+        });
+      }
+
+      req.userId = userId;
+      req.authUser = effectiveUser;
+      return next();
+    })
+    .catch((error) => {
+      console.error('[enforceRunLimit]', error);
+      return jsonError(res, 500, 'Internal Server Error', error.message ?? 'Run limit check failed');
+    });
 }
 
 function handleOpenAiError(error, res) {
@@ -141,7 +183,13 @@ app.post('/api/auth/telegram', async (req, res) => {
 
     const payload = req.body ?? {};
     const user = await upsertUser(payload);
-    return jsonOk(res, { user });
+    const subscriptionInfo = await getSubscriptionForUser(user.id);
+    return jsonOk(res, {
+      user: { ...user, role: subscriptionInfo.effectivePlan },
+      subscription: subscriptionInfo.subscription,
+      effectivePlan: subscriptionInfo.effectivePlan,
+      usage: subscriptionInfo.quota,
+    });
   } catch (error) {
     console.error('[POST /api/auth/telegram]', error);
     const status = error.code === 'not_configured' ? 503 : 400;
@@ -157,11 +205,52 @@ app.get('/api/auth/me', async (req, res) => {
     }
 
     const stats = await getUsageStats(userId);
-    return jsonOk(res, { user: stats.user, usage: stats });
+    const subscriptionInfo = await getSubscriptionForUser(userId);
+    const { user, monthly_usage_events, ...quota } = stats;
+    return jsonOk(res, {
+      user,
+      usage: { ...quota, monthly_usage_events },
+      subscription: subscriptionInfo.subscription,
+      effectivePlan: subscriptionInfo.effectivePlan,
+    });
   } catch (error) {
     console.error('[GET /api/auth/me]', error);
     const status = error.code === 'user_not_found' ? 404 : error.code === 'not_configured' ? 503 : 500;
     return jsonError(res, status, error.code ?? 'auth_error', error.message ?? 'Failed to load user');
+  }
+});
+
+app.get('/api/subscription', requireUserId, async (req, res) => {
+  try {
+    const result = await getSubscriptionForUser(req.userId);
+    return jsonOk(res, result);
+  } catch (error) {
+    console.error('[GET /api/subscription]', error);
+    const status = error.code === 'user_not_found' ? 404 : error.code === 'not_configured' ? 503 : 500;
+    return jsonError(res, status, error.code ?? 'subscription_error', error.message ?? 'Failed to load subscription');
+  }
+});
+
+app.post('/api/subscription/change', requireUserId, async (req, res) => {
+  try {
+    const { plan, status, provider } = req.body ?? {};
+    if (!plan || typeof plan !== 'string') {
+      return jsonError(res, 400, 'Bad Request', 'Field "plan" is required (free, pro, owner)');
+    }
+
+    const result = await changeSubscription(req.userId, { plan, status, provider });
+    return jsonOk(res, result);
+  } catch (error) {
+    console.error('[POST /api/subscription/change]', error);
+    const status =
+      error.code === 'user_not_found'
+        ? 404
+        : error.code === 'invalid_plan'
+          ? 400
+          : error.code === 'not_configured'
+            ? 503
+            : 500;
+    return jsonError(res, status, error.code ?? 'subscription_error', error.message ?? 'Failed to change subscription');
   }
 });
 
@@ -285,7 +374,7 @@ app.get('/', (_req, res) => {
   });
 });
 
-app.post('/api/test-ai', async (req, res) => {
+app.post('/api/test-ai', enforceRunLimit, async (req, res) => {
   try {
     const { message, workflow, metadata } = req.body ?? {};
 
@@ -519,7 +608,7 @@ app.post('/api/export/:format', async (req, res) => {
   }
 });
 
-app.post('/api/workflow/upload', (req, res) => {
+app.post('/api/workflow/upload', enforceRunLimit, (req, res) => {
   universalUpload.single('file')(req, res, async (uploadErr) => {
     if (NODE_ENV !== 'production') {
       console.log('[POST /api/workflow/upload] req.body:', req.body);

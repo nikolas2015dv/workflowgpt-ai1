@@ -1,23 +1,9 @@
 const { getSupabaseAdmin, isSupabaseConfigured } = require('./supabase');
+const { buildUsageQuota } = require('../config/planLimits');
+const { VALID_ROLES, getOwnerTelegramId, resolveRole } = require('../lib/userRole');
 
 const USERS_TABLE = 'users';
 const USAGE_TABLE = 'user_usage';
-const VALID_ROLES = new Set(['owner', 'pro', 'free']);
-
-function getOwnerTelegramId() {
-  const raw = process.env.OWNER_TELEGRAM_ID;
-  if (!raw || !String(raw).trim()) return null;
-  const parsed = Number(String(raw).trim());
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function resolveRole(telegramId, dbRole) {
-  const ownerId = getOwnerTelegramId();
-  if (ownerId != null && Number(telegramId) === ownerId) {
-    return 'owner';
-  }
-  return VALID_ROLES.has(dbRole) ? dbRole : 'free';
-}
 
 function mapUserRow(row) {
   if (!row) return null;
@@ -89,7 +75,7 @@ async function createUser(payload) {
   const client = getClientOrThrow();
   const normalized = normalizeTelegramPayload(payload);
   const now = new Date().toISOString();
-  const role = resolveRole(normalized.telegram_id, payload?.role ?? 'free');
+  const role = resolveRole(normalized.telegram_id, 'free');
 
   const row = {
     telegram_id: normalized.telegram_id,
@@ -107,7 +93,10 @@ async function createUser(payload) {
 
   const { data, error } = await client.from(USERS_TABLE).insert(row).select('*').single();
   if (error) throw error;
-  return mapUserRow(data);
+  const user = mapUserRow(data);
+  const { ensureDefaultSubscription } = require('./subscriptions');
+  await ensureDefaultSubscription(user.id, user.role);
+  return user;
 }
 
 async function upsertUser(payload) {
@@ -120,7 +109,15 @@ async function upsertUser(payload) {
     return createUser(payload);
   }
 
-  const role = resolveRole(normalized.telegram_id, existing.role);
+  const { getSubscriptionRow, ensureDefaultSubscription, resolveEffectivePlan } = require('./subscriptions');
+  let subscription = await getSubscriptionRow(existing.id);
+  if (!subscription) {
+    subscription = await ensureDefaultSubscription(existing.id, existing.role);
+  }
+  const role = resolveEffectivePlan(
+    { telegram_id: normalized.telegram_id, role: existing.role },
+    subscription
+  );
   const updates = {
     username: normalized.username,
     first_name: normalized.first_name,
@@ -139,7 +136,16 @@ async function upsertUser(payload) {
     .single();
 
   if (error) throw error;
-  return mapUserRow(data);
+  const user = mapUserRow(data);
+
+  if (subscription && subscription.plan !== role) {
+    await client
+      .from('subscriptions')
+      .update({ plan: role, updated_at: now })
+      .eq('user_id', existing.id);
+  }
+
+  return user;
 }
 
 function isSameMonth(a, b) {
@@ -203,13 +209,21 @@ async function getUsageStats(userId) {
 
   if (error) throw error;
 
+  const monthlyUsageEvents = count ?? 0;
+  const { getSubscriptionRow, resolveEffectivePlan } = require('./subscriptions');
+  const subscription = await getSubscriptionRow(userId);
+  const effectiveRole = resolveEffectivePlan(user, subscription);
+  const monthlyRuns = Math.max(user.monthly_runs ?? 0, monthlyUsageEvents);
+
   return {
-    user,
-    monthly_runs: user.monthly_runs,
-    total_runs: user.total_runs,
-    monthly_usage_events: count ?? 0,
+    user: { ...user, role: effectiveRole },
+    monthly_usage_events: monthlyUsageEvents,
+    monthly_runs: monthlyRuns,
+    ...buildUsageQuota({ ...user, role: effectiveRole, monthly_runs: monthlyRuns }),
   };
 }
+
+const { canUserRunWorkflow } = require('../config/planLimits');
 
 module.exports = {
   USERS_TABLE,
@@ -225,4 +239,6 @@ module.exports = {
   incrementUsage,
   getUsageStats,
   isSupabaseConfigured,
+  canUserRunWorkflow,
+  buildUsageQuota,
 };

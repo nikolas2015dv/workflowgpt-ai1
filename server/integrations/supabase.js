@@ -78,8 +78,9 @@ function rowToHistoryItem(row) {
 
 function historyItemToRow(item, userId) {
   const report = buildReportText(item.result);
-  const row = {
+  return {
     id: item.id,
+    user_id: userId,
     created_at: new Date(item.createdAt).toISOString(),
     workflow_type: item.workflowType,
     subject: item.subject ?? '',
@@ -89,10 +90,6 @@ function historyItemToRow(item, userId) {
     recommendations: extractRecommendations(item.result),
     raw_data: { result: item.result },
   };
-  if (userId) {
-    row.user_id = userId;
-  }
-  return row;
 }
 
 async function checkSupabaseHealth() {
@@ -113,6 +110,10 @@ async function insertWorkflowHistory(item, userId) {
   const client = getSupabaseAdmin();
   if (!client) {
     return { ok: false, skipped: true, reason: 'not_configured' };
+  }
+
+  if (!userId) {
+    return { ok: false, skipped: true, reason: 'user_required' };
   }
 
   const row = historyItemToRow(item, userId);

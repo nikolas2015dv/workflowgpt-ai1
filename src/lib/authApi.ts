@@ -1,4 +1,6 @@
-import type { AppUser, TelegramAuthPayload, UsageStats } from '../types/user';
+import type { AppUser, TelegramAuthPayload, UsageQuota, UsageStats, UserRole } from '../types/user';
+import type { Subscription } from '../types/subscription';
+import { getUsageQuota } from './planLimits';
 import { apiUrl, mapFetchError } from './api';
 import { logError, logMobile } from './mobileDebug';
 
@@ -18,7 +20,12 @@ async function parseJson<T>(response: Response): Promise<T> {
   }
 }
 
-export async function authenticateWithTelegram(payload: TelegramAuthPayload): Promise<AppUser> {
+export async function authenticateWithTelegram(payload: TelegramAuthPayload): Promise<{
+  user: AppUser;
+  subscription?: Subscription | null;
+  effectivePlan?: UserRole;
+  usage?: UsageQuota;
+}> {
   logMobile('auth telegram', payload.telegram_id);
 
   let response: Response;
@@ -32,15 +39,32 @@ export async function authenticateWithTelegram(payload: TelegramAuthPayload): Pr
     throw mapFetchError(e);
   }
 
-  const data = await parseJson<{ user?: AppUser; message?: string; error?: string }>(response);
+  const data = await parseJson<{
+    user?: AppUser;
+    subscription?: Subscription | null;
+    effectivePlan?: UserRole;
+    usage?: UsageQuota;
+    message?: string;
+    error?: string;
+  }>(response);
   if (!response.ok || !data.user) {
     throw new Error(data.message ?? data.error ?? `Auth failed (${response.status})`);
   }
 
-  return data.user;
+  return {
+    user: data.user,
+    subscription: data.subscription ?? null,
+    effectivePlan: data.effectivePlan ?? data.user.role,
+    usage: data.usage,
+  };
 }
 
-export async function fetchCurrentUser(userId: string): Promise<{ user: AppUser; usage: UsageStats }> {
+export async function fetchCurrentUser(userId: string): Promise<{
+  user: AppUser;
+  usage: UsageStats | UsageQuota;
+  subscription?: Subscription | null;
+  effectivePlan?: UserRole;
+}> {
   let response: Response;
   try {
     response = await fetch(apiUrl('/api/auth/me'), {
@@ -54,6 +78,8 @@ export async function fetchCurrentUser(userId: string): Promise<{ user: AppUser;
   const data = await parseJson<{
     user?: AppUser;
     usage?: UsageStats;
+    subscription?: Subscription | null;
+    effectivePlan?: UserRole;
     message?: string;
     error?: string;
   }>(response);
@@ -62,13 +88,20 @@ export async function fetchCurrentUser(userId: string): Promise<{ user: AppUser;
     throw new Error(data.message ?? data.error ?? `Failed to load user (${response.status})`);
   }
 
+  const fallbackQuota = getUsageQuota(
+    data.user.role as UserRole,
+    data.user.monthly_runs,
+    data.user.total_runs
+  );
+
   return {
     user: data.user,
     usage: data.usage ?? {
-      monthly_runs: data.user.monthly_runs,
-      total_runs: data.user.total_runs,
+      ...fallbackQuota,
       monthly_usage_events: data.user.monthly_runs,
     },
+    subscription: data.subscription ?? null,
+    effectivePlan: data.effectivePlan ?? data.user.role,
   };
 }
 

@@ -7,11 +7,15 @@ import {
 } from '../lib/authApi';
 import { setAuthUser as setSessionUser } from '../lib/authSession';
 import { isTelegramMiniApp, parseTelegramUser } from '../lib/telegramWebApp';
-import type { AppUser } from '../types/user';
+import type { AppUser, UsageQuota } from '../types/user';
+import type { Subscription } from '../types/subscription';
 import { logError } from '../lib/mobileDebug';
 
 export interface AuthContextValue {
   user: AppUser | null;
+  subscription: Subscription | null;
+  effectivePlan: AppUser['role'] | null;
+  usage: UsageQuota | null;
   isLoading: boolean;
   isAuthenticated: boolean;
   isDevMode: boolean;
@@ -28,6 +32,9 @@ interface AuthProviderProps {
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children, telegramReady }) => {
   const [user, setUser] = useState<AppUser | null>(null);
+  const [subscription, setSubscription] = useState<Subscription | null>(null);
+  const [effectivePlan, setEffectivePlan] = useState<AppUser['role'] | null>(null);
+  const [usage, setUsage] = useState<UsageQuota | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isDevMode, setIsDevMode] = useState(false);
@@ -36,6 +43,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children, telegramRe
     setUser(next);
     setSessionUser(next);
   }, []);
+
+  const applySession = useCallback(
+    (
+      nextUser: AppUser | null,
+      nextSubscription: Subscription | null = null,
+      nextEffectivePlan: AppUser['role'] | null = null,
+      nextUsage: UsageQuota | null = null
+    ) => {
+      applyUser(nextUser);
+      setSubscription(nextSubscription);
+      setEffectivePlan(nextEffectivePlan);
+      setUsage(nextUsage);
+    },
+    [applyUser]
+  );
 
   const signIn = useCallback(async () => {
     setIsLoading(true);
@@ -47,11 +69,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children, telegramRe
       const payload = inTelegram ? buildTelegramAuthPayload(tgUser) : buildDevAuthPayload();
       setIsDevMode(!inTelegram);
 
-      const authenticated = await authenticateWithTelegram(payload);
-      applyUser(authenticated);
+      const authResult = await authenticateWithTelegram(payload);
+      applySession(
+        authResult.user,
+        authResult.subscription ?? null,
+        authResult.effectivePlan ?? authResult.user.role,
+        authResult.usage ?? null
+      );
     } catch (e) {
       logError('auth', e);
-      applyUser(null);
+      applySession(null);
       setError(e instanceof Error ? e.message : 'Не удалось войти');
     } finally {
       setIsLoading(false);
@@ -62,7 +89,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children, telegramRe
     if (!user?.id) return;
     try {
       const result = await fetchCurrentUser(user.id);
-      applyUser(result.user);
+      applySession(
+        result.user,
+        (result as { subscription?: Subscription }).subscription ?? null,
+        (result as { effectivePlan?: AppUser['role'] }).effectivePlan ?? result.user.role,
+        result.usage as UsageQuota
+      );
       setError(null);
     } catch (e) {
       logError('auth-refresh', e);
@@ -78,13 +110,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children, telegramRe
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
+      subscription,
+      effectivePlan,
+      usage,
       isLoading,
       isAuthenticated: Boolean(user?.id),
       isDevMode,
       error,
       refreshUser,
     }),
-    [user, isLoading, isDevMode, error, refreshUser]
+    [user, subscription, effectivePlan, usage, isLoading, isDevMode, error, refreshUser]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -1,9 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { formatPlanLimitLabel, formatRoleLabel } from '../lib/planLimits';
+import {
+  formatLimitValue,
+  formatRoleLabel,
+  formatTariffLabel,
+  getUsageQuota,
+  isUnlimitedRole,
+} from '../lib/planLimits';
+import { formatSubscriptionStatus } from '../lib/subscriptionApi';
 
 export const ProfileScreen: React.FC = () => {
-  const { user, isLoading, isDevMode, error, refreshUser } = useAuth();
+  const { user, subscription, effectivePlan, usage, isLoading, isDevMode, error, refreshUser } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
@@ -43,6 +50,11 @@ export const ProfileScreen: React.FC = () => {
 
   const displayName = [user.first_name, user.last_name].filter(Boolean).join(' ').trim() || user.first_name;
   const avatarLetter = displayName.charAt(0).toUpperCase();
+  const planRole = effectivePlan ?? user.role;
+  const unlimited = isUnlimitedRole(planRole);
+  const quota =
+    usage ??
+    getUsageQuota(planRole, user.monthly_runs, user.total_runs);
 
   return (
     <section className="profile-screen">
@@ -80,27 +92,55 @@ export const ProfileScreen: React.FC = () => {
 
         <dl className="profile-stats">
           <div className="profile-stats__row">
+            <dt>Telegram ID</dt>
+            <dd>{user.telegram_id}</dd>
+          </div>
+          <div className="profile-stats__row">
             <dt>Роль</dt>
             <dd>
-              <span className={`profile-role profile-role--${user.role}`}>{formatRoleLabel(user.role)}</span>
+              <span className={`profile-role profile-role--${planRole}`}>{formatRoleLabel(planRole)}</span>
             </dd>
           </div>
           <div className="profile-stats__row">
-            <dt>Лимит</dt>
-            <dd>{formatPlanLimitLabel(user.role)}</dd>
+            <dt>Current Plan</dt>
+            <dd>{formatTariffLabel(planRole)}</dd>
           </div>
+          <div className="profile-stats__row">
+            <dt>Subscription Status</dt>
+            <dd>{formatSubscriptionStatus(subscription?.status ?? 'active')}</dd>
+          </div>
+          <div className="profile-stats__row">
+            <dt>Monthly Limit</dt>
+            <dd>{unlimited ? 'Unlimited' : formatLimitValue(planRole)}</dd>
+          </div>
+          {!unlimited && (
+            <>
+              <div className="profile-stats__row">
+                <dt>Remaining Runs</dt>
+                <dd>{quota.remaining ?? 0}</dd>
+              </div>
+              <div className="profile-stats__row">
+                <dt>Использовано</dt>
+                <dd>{quota.monthly_runs}</dd>
+              </div>
+            </>
+          )}
+          {unlimited && (
+            <div className="profile-stats__row">
+              <dt>Remaining Runs</dt>
+              <dd>Unlimited</dd>
+            </div>
+          )}
           <div className="profile-stats__row">
             <dt>Всего запусков</dt>
             <dd>{user.total_runs}</dd>
           </div>
-          <div className="profile-stats__row">
-            <dt>Запусков за месяц</dt>
-            <dd>{user.monthly_runs}</dd>
-          </div>
-          <div className="profile-stats__row">
-            <dt>Telegram ID</dt>
-            <dd>{user.telegram_id}</dd>
-          </div>
+          {subscription?.provider && (
+            <div className="profile-stats__row">
+              <dt>Provider</dt>
+              <dd>{subscription.provider}</dd>
+            </div>
+          )}
         </dl>
 
         <button

@@ -26,9 +26,24 @@ export interface TelegramAuthPayload {
 export interface UsageStats {
   monthly_runs: number;
   total_runs: number;
-  monthly_usage_events: number;
+  monthly_usage_events?: number;
+  limit: number | null;
+  remaining: number | null;
+  unlimited: boolean;
+  role: UserRole;
+  tariff: 'free' | 'pro' | 'unlimited';
 }
 
 export type PlanLimits = {
   maxMonthlyRuns: number | null;
 };
+
+export interface UsageQuota {
+  monthly_runs: number;
+  total_runs: number;
+  limit: number | null;
+  remaining: number | null;
+  unlimited: boolean;
+  role: UserRole;
+  tariff: 'free' | 'pro' | 'unlimited';
+}

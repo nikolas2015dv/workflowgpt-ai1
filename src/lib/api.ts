@@ -4,11 +4,12 @@ import { ensureApiConfigured, getApiBaseUrl, API_REQUEST_TIMEOUT_MS } from '../c
 import { RESULT_SECTIONS } from '../config/pipelineSteps';
 import type { ResultSectionConfig, WorkflowRunResult } from '../types/workflowResult';
 import { buildCopyText } from './formatResult';
+import { getAuthUserId } from './authSession';
 import { logError, logUpload, logMobile, logWorkflow } from './mobileDebug';
 
 export const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
-export type ApiErrorCode = 'network' | 'timeout' | 'config' | 'backend' | 'unknown';
+export type ApiErrorCode = 'network' | 'timeout' | 'config' | 'backend' | 'limit_exceeded' | 'unknown';
 
 export interface WorkflowSectionDto extends ResultSectionConfig {}
 
@@ -50,6 +51,14 @@ export function apiUrl(path: string): string {
   return `${base}${path.startsWith('/') ? path : `/${path}`}`;
 }
 
+function withUserIdHeaders(headers: Record<string, string> = {}): Record<string, string> {
+  const userId = getAuthUserId();
+  if (userId) {
+    return { ...headers, 'X-User-Id': userId };
+  }
+  return headers;
+}
+
 async function parseResponse(response: Response): Promise<WorkflowApiResponse> {
   const contentType = response.headers.get('content-type') ?? '';
 
@@ -77,10 +86,14 @@ async function parseResponse(response: Response): Promise<WorkflowApiResponse> {
 
 function toWorkflowRunResult(data: WorkflowApiResponse, response: Response): WorkflowRunResult {
   if (!response.ok) {
+    const isLimit =
+      response.status === 429 ||
+      data.error === 'limit_exceeded' ||
+      (data as { code?: string }).code === 'limit_exceeded';
     throw new ApiRequestError(
       data.message ?? data.error ?? `Ошибка сервера (${response.status})`,
       response.status,
-      'backend'
+      isLimit ? 'limit_exceeded' : 'backend'
     );
   }
 
@@ -236,7 +249,7 @@ export async function requestAiReply(
     apiUrl('/api/test-ai'),
     {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      headers: withUserIdHeaders({ 'Content-Type': 'application/json', Accept: 'application/json' }),
       body: JSON.stringify({ workflow, message, metadata }),
       signal,
     }
@@ -281,6 +294,7 @@ export async function uploadWorkflowFile(
     apiUrl('/api/workflow/upload'),
     {
       method: 'POST',
+      headers: withUserIdHeaders(),
       body: formData,
       signal: options.signal,
     }

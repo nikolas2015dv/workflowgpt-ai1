@@ -13,6 +13,8 @@ import { logError, logUpload, logWorkflow } from '../lib/mobileDebug';
 import { WorkflowProgress } from './WorkflowProgress';
 import type { WorkflowRunResult } from '../types/workflowResult';
 import { useTelegram } from '../hooks/useTelegram';
+import { useAuth } from '../hooks/useAuth';
+import { canRunWorkflow, formatLimitValue, isUnlimitedRole } from '../lib/planLimits';
 import { useTelegramMainButton } from '../hooks/useTelegramMainButton';
 import { FileUploadField } from './FileUploadField';
 import { CompetitorFields } from './CompetitorFields';
@@ -64,9 +66,23 @@ export const TaskExecutor: React.FC<TaskExecutorProps> = ({ workflow, onComplete
     (isCompetitors && hasCompetitorData(competitorMeta));
 
   const { isTelegram, hapticNotification } = useTelegram();
+  const { user, effectivePlan, usage, isAuthenticated } = useAuth();
+  const planRole = effectivePlan ?? user?.role;
+  const monthlyRuns = usage?.monthly_runs ?? user?.monthly_runs ?? 0;
+
+  const runCheck =
+    user && isAuthenticated && planRole
+      ? canRunWorkflow(planRole, monthlyRuns)
+      : { allowed: true, unlimited: true, limit: null, remaining: null };
 
   const runWorkflow = async () => {
     if (!canSubmit || loading) return;
+
+    if (user && isAuthenticated && !runCheck.allowed) {
+      setError(runCheck.message ?? 'Лимит запусков исчерпан.');
+      hapticNotification('error');
+      return;
+    }
 
     setError(null);
     setLoading(true);
@@ -111,6 +127,9 @@ export const TaskExecutor: React.FC<TaskExecutorProps> = ({ workflow, onComplete
       if (err instanceof ApiRequestError && err.code === 'config') {
         message = `${message} Настройте VITE_API_URL в Vercel.`;
       }
+      if (err instanceof ApiRequestError && err.code === 'limit_exceeded') {
+        message = err.message;
+      }
       setError(message);
       hapticNotification('error');
       setLoading(false);
@@ -119,10 +138,13 @@ export const TaskExecutor: React.FC<TaskExecutorProps> = ({ workflow, onComplete
     }
   };
 
+  const limitBlocked = Boolean(user && isAuthenticated && !runCheck.allowed);
+  const showUsageHint = Boolean(user && isAuthenticated && planRole && !isUnlimitedRole(planRole));
+
   useTelegramMainButton({
     visible: !loading,
     text: 'Запустить workflow',
-    disabled: !canSubmit,
+    disabled: !canSubmit || limitBlocked,
     loading,
     onClick: () => void runWorkflow(),
   });
@@ -210,6 +232,14 @@ export const TaskExecutor: React.FC<TaskExecutorProps> = ({ workflow, onComplete
         <h2 className="section-title">{workflow}</h2>
         <p className="section-desc">{getWorkflowDescription(workflow)}</p>
       </div>
+
+      {showUsageHint && user && (
+        <p className={`task-executor__usage-hint${limitBlocked ? ' task-executor__usage-hint--blocked' : ''}`}>
+          {limitBlocked
+            ? (runCheck.message ?? 'Лимит запусков исчерпан.')
+            : `Осталось запусков: ${runCheck.remaining ?? 0} из ${formatLimitValue(planRole!)}`}
+        </p>
+      )}
 
       {error && (
         <div className="api-error glass-panel" role="alert">

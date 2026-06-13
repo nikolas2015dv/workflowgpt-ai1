@@ -31,6 +31,14 @@ const {
 } = require('./integrations/users');
 const { getSubscriptionForUser, changeSubscription } = require('./integrations/subscriptions');
 const { assertOwnerAccess, listAdminUsers, getAdminStats } = require('./integrations/admin');
+const {
+  createTransaction,
+  processFakePayment,
+  getUserTransactions,
+  getUserBillingSummary,
+  getBillingStats,
+  listAllTransactions,
+} = require('./integrations/billing');
 
 dotenv.config({ path: path.join(__dirname, '.env') });
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
@@ -46,6 +54,24 @@ app.disable('x-powered-by');
 app.use(cors(createCorsOptions()));
 app.options('*', cors(createCorsOptions()));
 app.use(express.json({ limit: '4mb' }));
+
+// AUDIT-TEMP: log billing/subscription POST requests at route entry
+app.use((req, res, next) => {
+  if (
+    req.method === 'POST' &&
+    (req.path === '/api/billing/checkout' ||
+      req.path === '/api/billing/pay' ||
+      req.path === '/api/subscription/change')
+  ) {
+    console.log('[AUDIT][server] incoming request', {
+      method: req.method,
+      path: req.path,
+      userId: req.header('X-User-Id') ?? null,
+      body: req.body,
+    });
+  }
+  next();
+});
 
 function jsonError(res, status, error, message, extra = {}) {
   return res.status(status).json({ ok: false, status: 'error', error, message, ...extra });
@@ -274,19 +300,143 @@ app.post('/api/subscription/change', requireUserId, async (req, res) => {
       return jsonError(res, 403, 'forbidden', 'Cannot upgrade to owner plan');
     }
 
-    const result = await changeSubscription(req.userId, { plan, status, provider });
+    // Self-service plan changes must go through billing (except downgrade to free via support/admin)
+    if (plan === 'pro') {
+      return jsonError(
+        res,
+        400,
+        'billing_required',
+        'Use POST /api/billing/checkout to upgrade. Payment is required before plan activation.'
+      );
+    }
+
+    const result = await changeSubscription(req.userId, { plan, status, provider, source: 'direct' });
     return jsonOk(res, result);
   } catch (error) {
     console.error('[POST /api/subscription/change]', error);
     const status =
       error.code === 'user_not_found'
         ? 404
-        : error.code === 'invalid_plan'
+        : error.code === 'invalid_plan' || error.code === 'billing_required'
           ? 400
           : error.code === 'not_configured'
             ? 503
             : 500;
     return jsonError(res, status, error.code ?? 'subscription_error', error.message ?? 'Failed to change subscription');
+  }
+});
+
+app.post('/api/billing/checkout', requireUserId, async (req, res) => {
+  try {
+    const { plan, provider } = req.body ?? {};
+    if (!plan || typeof plan !== 'string') {
+      return jsonError(res, 400, 'Bad Request', 'Field "plan" is required');
+    }
+
+    const transaction = await createTransaction(req.userId, { plan, provider });
+    console.info('[POST /api/billing/checkout] pending transaction', {
+      userId: req.userId,
+      transactionId: transaction.id,
+      plan: transaction.plan,
+      status: transaction.status,
+    });
+    return jsonOk(res, { transaction });
+  } catch (error) {
+    console.error('[POST /api/billing/checkout]', error);
+    const status =
+      error.code === 'user_not_found'
+        ? 404
+        : error.code === 'invalid_plan'
+          ? 400
+          : error.code === 'already_subscribed'
+            ? 409
+            : error.code === 'forbidden'
+              ? 403
+              : error.code === 'not_configured'
+                ? 503
+                : 500;
+    return jsonError(res, status, error.code ?? 'billing_error', error.message ?? 'Failed to create transaction');
+  }
+});
+
+app.post('/api/billing/pay', requireUserId, async (req, res) => {
+  try {
+    const { transactionId } = req.body ?? {};
+    if (!transactionId || typeof transactionId !== 'string') {
+      return jsonError(res, 400, 'Bad Request', 'Field "transactionId" is required');
+    }
+
+    const result = await processFakePayment(req.userId, transactionId);
+    return jsonOk(res, {
+      transaction: result.transaction,
+      user: result.subscription.user,
+      subscription: result.subscription.subscription,
+      effectivePlan: result.subscription.effectivePlan,
+      quota: result.subscription.quota,
+    });
+  } catch (error) {
+    console.error('[POST /api/billing/pay]', error);
+    const status =
+      error.code === 'transaction_not_found'
+        ? 404
+        : error.code === 'forbidden'
+          ? 403
+          : error.code === 'invalid_status'
+            ? 400
+            : error.code === 'not_configured'
+              ? 503
+              : 500;
+    return jsonError(res, status, error.code ?? 'billing_error', error.message ?? 'Payment failed');
+  }
+});
+
+app.get('/api/billing/history', requireUserId, async (req, res) => {
+  try {
+    const transactions = await getUserTransactions(req.userId);
+    return jsonOk(res, { transactions });
+  } catch (error) {
+    console.error('[GET /api/billing/history]', error);
+    const status = error.code === 'not_configured' ? 503 : 500;
+    return jsonError(res, status, error.code ?? 'billing_error', error.message ?? 'Failed to load billing history');
+  }
+});
+
+app.get('/api/billing/summary', requireUserId, async (req, res) => {
+  try {
+    const summary = await getUserBillingSummary(req.userId);
+    return jsonOk(res, summary);
+  } catch (error) {
+    console.error('[GET /api/billing/summary]', error);
+    const status =
+      error.code === 'user_not_found'
+        ? 404
+        : error.code === 'not_configured'
+          ? 503
+          : 500;
+    return jsonError(res, status, error.code ?? 'billing_error', error.message ?? 'Failed to load billing summary');
+  }
+});
+
+app.get('/api/admin/billing/stats', requireOwner, async (_req, res) => {
+  try {
+    const stats = await getBillingStats();
+    return jsonOk(res, stats);
+  } catch (error) {
+    console.error('[GET /api/admin/billing/stats]', error);
+    const status = error.code === 'not_configured' ? 503 : 500;
+    return jsonError(res, status, error.code ?? 'billing_error', error.message ?? 'Failed to load billing stats');
+  }
+});
+
+app.get('/api/admin/billing/transactions', requireOwner, async (req, res) => {
+  try {
+    const status = typeof req.query.status === 'string' ? req.query.status.trim() : undefined;
+    const transactions = await listAllTransactions({ status, limit: 200 });
+    return jsonOk(res, { transactions });
+  } catch (error) {
+    console.error('[GET /api/admin/billing/transactions]', error);
+    const status = error.code === 'not_configured' ? 503 : 500;
+    return jsonError(res, status, error.code ?? 'billing_error', error.message ?? 'Failed to load transactions');
   }
 });
 
@@ -322,7 +472,7 @@ app.post('/api/admin/subscription/change', requireOwner, async (req, res) => {
       return jsonError(res, 400, 'Bad Request', 'Field "plan" is required (free, pro, owner)');
     }
 
-    const result = await changeSubscription(userId, { plan, status, provider });
+    const result = await changeSubscription(userId, { plan, status, provider, source: 'admin' });
     return jsonOk(res, result);
   } catch (error) {
     console.error('[POST /api/admin/subscription/change]', error);

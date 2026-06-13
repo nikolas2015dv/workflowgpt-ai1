@@ -94,7 +94,9 @@ async function getSubscriptionForUser(userId) {
   };
 }
 
-async function changeSubscription(userId, { plan, status, provider }) {
+const PRO_ACTIVATION_SOURCES = new Set(['billing', 'admin']);
+
+async function changeSubscription(userId, { plan, status, provider, source = 'direct' }) {
   const user = await getUserById(userId);
   if (!user) {
     const error = new Error('User not found');
@@ -114,6 +116,14 @@ async function changeSubscription(userId, { plan, status, provider }) {
 
   if (isOwnerAccount) {
     nextPlan = 'owner';
+  }
+
+  if (nextPlan === 'pro' && !PRO_ACTIVATION_SOURCES.has(source)) {
+    const error = new Error(
+      'Pro plan requires billing payment. Use POST /api/billing/checkout then POST /api/billing/pay.'
+    );
+    error.code = 'billing_required';
+    throw error;
   }
 
   const nextStatus = VALID_STATUSES.has(status) ? status : 'active';

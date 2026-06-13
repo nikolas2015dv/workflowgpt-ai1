@@ -44,6 +44,17 @@ export async function changeSubscriptionPlan(
   userId: string,
   payload: ChangeSubscriptionPayload
 ): Promise<ChangeSubscriptionResult> {
+  // AUDIT-TEMP: detect legacy subscription/change callers
+  console.log('[AUDIT][subscriptionApi.changeSubscriptionPlan] called', {
+    userId,
+    payload,
+    endpoint: 'POST /api/subscription/change',
+  });
+
+  if (payload.plan === 'pro') {
+    throw new Error('Pro upgrade requires billing checkout. Use createBillingCheckout() from billingApi.');
+  }
+
   let response: Response;
   try {
     response = await fetch(apiUrl('/api/subscription/change'), {

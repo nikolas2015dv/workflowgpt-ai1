@@ -1,6 +1,6 @@
 import React from 'react';
 
-export type AppTab = 'workflows' | 'history' | 'pricing' | 'profile' | 'admin';
+export type AppTab = 'workflows' | 'history' | 'pricing' | 'billing' | 'profile' | 'admin';
 
 interface AppTabBarProps {
   activeTab: AppTab;
@@ -14,7 +14,7 @@ export const AppTabBar: React.FC<AppTabBarProps> = ({ activeTab, isOwner, onChan
 
   return (
     <nav
-      className={`app-tabs glass-panel${isOwner ? ' app-tabs--owner' : ''}`}
+      className={`app-tabs glass-panel${isOwner ? ' app-tabs--owner' : ' app-tabs--billing'}`}
       aria-label="Навигация"
     >
       <button type="button" className={tabClass('workflows')} onClick={() => onChange('workflows')}>
@@ -25,6 +25,9 @@ export const AppTabBar: React.FC<AppTabBarProps> = ({ activeTab, isOwner, onChan
       </button>
       <button type="button" className={tabClass('pricing')} onClick={() => onChange('pricing')}>
         Pricing
+      </button>
+      <button type="button" className={tabClass('billing')} onClick={() => onChange('billing')}>
+        Billing
       </button>
       <button type="button" className={tabClass('profile')} onClick={() => onChange('profile')}>
         Profile

@@ -2,11 +2,22 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../context/ToastContext';
 import { adminChangeUserPlan, fetchAdminStats, fetchAdminUsers } from '../lib/adminApi';
+import {
+  fetchAdminBillingStats,
+  fetchAdminBillingTransactions,
+  formatMoney,
+  formatProviderLabel,
+  formatTransactionStatus,
+} from '../lib/billingApi';
 import { formatRoleLabel } from '../lib/planLimits';
 import type { AdminStats, AdminUserRow } from '../types/admin';
+import type { BillingStats, BillingStatusFilter, BillingTransaction } from '../types/billing';
 import type { UserRole } from '../types/user';
 
 type LoadState = 'loading' | 'ready' | 'error';
+type AdminView = 'overview' | 'billing';
+
+const STATUS_FILTERS: BillingStatusFilter[] = ['all', 'paid', 'pending', 'failed', 'refunded'];
 
 function formatDate(value: string): string {
   try {
@@ -14,6 +25,19 @@ function formatDate(value: string): string {
       day: '2-digit',
       month: 'short',
       year: 'numeric',
+    }).format(new Date(value));
+  } catch {
+    return value;
+  }
+}
+
+function formatDateTime(value: string): string {
+  try {
+    return new Intl.DateTimeFormat('ru-RU', {
+      day: '2-digit',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
     }).format(new Date(value));
   } catch {
     return value;
@@ -28,11 +52,39 @@ function formatUserLabel(row: AdminUserRow): string {
 export const AdminScreen: React.FC = () => {
   const { user, isOwner } = useAuth();
   const { showToast } = useToast();
+  const [view, setView] = useState<AdminView>('overview');
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [error, setError] = useState<string | null>(null);
   const [users, setUsers] = useState<AdminUserRow[]>([]);
   const [stats, setStats] = useState<AdminStats | null>(null);
+  const [billingStats, setBillingStats] = useState<BillingStats | null>(null);
+  const [transactions, setTransactions] = useState<BillingTransaction[]>([]);
+  const [statusFilter, setStatusFilter] = useState<BillingStatusFilter>('all');
   const [changingUserId, setChangingUserId] = useState<string | null>(null);
+
+  const loadOverview = useCallback(async () => {
+    if (!user?.id || !isOwner) return;
+
+    const [nextUsers, nextStats, nextBillingStats] = await Promise.all([
+      fetchAdminUsers(user.id),
+      fetchAdminStats(user.id),
+      fetchAdminBillingStats(user.id),
+    ]);
+    setUsers(nextUsers);
+    setStats(nextStats);
+    setBillingStats(nextBillingStats);
+  }, [user?.id, isOwner]);
+
+  const loadBilling = useCallback(async () => {
+    if (!user?.id || !isOwner) return;
+
+    const [nextBillingStats, nextTransactions] = await Promise.all([
+      fetchAdminBillingStats(user.id),
+      fetchAdminBillingTransactions(user.id, statusFilter),
+    ]);
+    setBillingStats(nextBillingStats);
+    setTransactions(nextTransactions);
+  }, [user?.id, isOwner, statusFilter]);
 
   const loadData = useCallback(async () => {
     if (!user?.id || !isOwner) return;
@@ -41,18 +93,17 @@ export const AdminScreen: React.FC = () => {
     setError(null);
 
     try {
-      const [nextUsers, nextStats] = await Promise.all([
-        fetchAdminUsers(user.id),
-        fetchAdminStats(user.id),
-      ]);
-      setUsers(nextUsers);
-      setStats(nextStats);
+      if (view === 'overview') {
+        await loadOverview();
+      } else {
+        await loadBilling();
+      }
       setLoadState('ready');
     } catch (e) {
       setLoadState('error');
       setError(e instanceof Error ? e.message : 'Не удалось загрузить админку');
     }
-  }, [user?.id, isOwner]);
+  }, [user?.id, isOwner, view, loadOverview, loadBilling]);
 
   useEffect(() => {
     void loadData();
@@ -77,7 +128,7 @@ export const AdminScreen: React.FC = () => {
     return null;
   }
 
-  if (loadState === 'loading' && !stats) {
+  if (loadState === 'loading' && !stats && view === 'overview') {
     return (
       <section className="admin-screen">
         <div className="admin-loading glass-panel" role="status">
@@ -87,7 +138,7 @@ export const AdminScreen: React.FC = () => {
     );
   }
 
-  if (loadState === 'error' && !stats) {
+  if (loadState === 'error' && !stats && view === 'overview') {
     return (
       <section className="admin-screen">
         <div className="admin-error glass-panel">
@@ -101,7 +152,9 @@ export const AdminScreen: React.FC = () => {
     );
   }
 
-  const statCards = stats
+  const currency = billingStats?.currency ?? 'USD';
+
+  const overviewStatCards = stats
     ? [
         { label: 'Всего пользователей', value: stats.total_users },
         { label: 'Free', value: stats.free_users },
@@ -113,12 +166,21 @@ export const AdminScreen: React.FC = () => {
       ]
     : [];
 
+  const revenueCards = billingStats
+    ? [
+        { label: 'Total Revenue', value: formatMoney(billingStats.total_revenue, currency) },
+        { label: 'Paid Transactions', value: billingStats.paid_transactions },
+        { label: 'Pending Transactions', value: billingStats.pending_transactions },
+        { label: 'Active Pro Users', value: billingStats.active_pro_users },
+      ]
+    : [];
+
   return (
     <section className="admin-screen">
       <div className="section-intro admin-screen__intro">
         <div>
           <h2 className="section-title">Admin</h2>
-          <p className="section-desc">Управление пользователями и статистика системы</p>
+          <p className="section-desc">Управление платформой и биллингом</p>
         </div>
         <button
           type="button"
@@ -130,84 +192,184 @@ export const AdminScreen: React.FC = () => {
         </button>
       </div>
 
+      <div className="admin-subtabs glass-panel">
+        <button
+          type="button"
+          className={`admin-subtabs__item${view === 'overview' ? ' admin-subtabs__item--active' : ''}`}
+          onClick={() => setView('overview')}
+        >
+          Overview
+        </button>
+        <button
+          type="button"
+          className={`admin-subtabs__item${view === 'billing' ? ' admin-subtabs__item--active' : ''}`}
+          onClick={() => setView('billing')}
+        >
+          Billing Management
+        </button>
+      </div>
+
       {error && loadState === 'error' && (
         <p className="admin-inline-error" role="alert">
           {error}
         </p>
       )}
 
-      <div className="admin-stats-grid">
-        {statCards.map((card) => (
-          <article key={card.label} className="admin-stat-card glass-card">
-            <p className="admin-stat-card__value">{card.value}</p>
-            <p className="admin-stat-card__label">{card.label}</p>
-          </article>
-        ))}
-      </div>
-
-      <div className="admin-section">
-        <h3 className="admin-section__title">Users</h3>
-
-        {users.length === 0 ? (
-          <div className="admin-empty glass-panel">
-            <p className="admin-empty__title">Нет пользователей</p>
-            <p className="admin-empty__desc">Список пуст или ещё не загружен</p>
+      {view === 'overview' && (
+        <>
+          <div className="admin-section">
+            <h3 className="admin-section__title">Revenue</h3>
+            <div className="admin-stats-grid admin-stats-grid--revenue">
+              {revenueCards.map((card) => (
+                <article key={card.label} className="admin-stat-card glass-card admin-stat-card--revenue">
+                  <p className="admin-stat-card__value">{card.value}</p>
+                  <p className="admin-stat-card__label">{card.label}</p>
+                </article>
+              ))}
+            </div>
           </div>
-        ) : (
-          <div className="admin-table-wrap glass-panel">
-            <table className="admin-table">
-              <thead>
-                <tr>
-                  <th>Пользователь</th>
-                  <th>Role</th>
-                  <th>Plan</th>
-                  <th>Месяц</th>
-                  <th>Всего</th>
-                  <th>Создан</th>
-                  <th>Действия</th>
-                </tr>
-              </thead>
-              <tbody>
-                {users.map((row) => {
-                  const isChanging = changingUserId === row.id;
-                  return (
-                    <tr key={row.id}>
-                      <td>
-                        <span className="admin-table__name">{formatUserLabel(row)}</span>
-                        <span className="admin-table__meta">ID {row.telegram_id}</span>
-                      </td>
-                      <td>
-                        <span className={`admin-pill admin-pill--${row.role}`}>{formatRoleLabel(row.role)}</span>
-                      </td>
-                      <td>
-                        <span className={`admin-pill admin-pill--${row.plan}`}>{formatRoleLabel(row.plan)}</span>
-                      </td>
-                      <td>{row.monthly_runs}</td>
-                      <td>{row.total_runs}</td>
-                      <td>{formatDate(row.created_at)}</td>
-                      <td>
-                        <div className="admin-actions">
-                          {(['free', 'pro', 'owner'] as const).map((plan) => (
-                            <button
-                              key={plan}
-                              type="button"
-                              className={`admin-actions__btn${row.plan === plan ? ' admin-actions__btn--active' : ''}`}
-                              disabled={isChanging || row.plan === plan}
-                              onClick={() => void handleSetPlan(row.id, plan)}
-                            >
-                              {isChanging ? '…' : `Set ${formatRoleLabel(plan)}`}
-                            </button>
-                          ))}
-                        </div>
-                      </td>
+
+          <div className="admin-stats-grid">
+            {overviewStatCards.map((card) => (
+              <article key={card.label} className="admin-stat-card glass-card">
+                <p className="admin-stat-card__value">{card.value}</p>
+                <p className="admin-stat-card__label">{card.label}</p>
+              </article>
+            ))}
+          </div>
+
+          <div className="admin-section">
+            <h3 className="admin-section__title">Users</h3>
+
+            {users.length === 0 ? (
+              <div className="admin-empty glass-panel">
+                <p className="admin-empty__title">Нет пользователей</p>
+                <p className="admin-empty__desc">Список пуст или ещё не загружен</p>
+              </div>
+            ) : (
+              <div className="admin-table-wrap glass-panel">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Пользователь</th>
+                      <th>Role</th>
+                      <th>Plan</th>
+                      <th>Месяц</th>
+                      <th>Всего</th>
+                      <th>Создан</th>
+                      <th>Действия</th>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody>
+                    {users.map((row) => {
+                      const isChanging = changingUserId === row.id;
+                      return (
+                        <tr key={row.id}>
+                          <td>
+                            <span className="admin-table__name">{formatUserLabel(row)}</span>
+                            <span className="admin-table__meta">ID {row.telegram_id}</span>
+                          </td>
+                          <td>
+                            <span className={`admin-pill admin-pill--${row.role}`}>
+                              {formatRoleLabel(row.role)}
+                            </span>
+                          </td>
+                          <td>
+                            <span className={`admin-pill admin-pill--${row.plan}`}>
+                              {formatRoleLabel(row.plan)}
+                            </span>
+                          </td>
+                          <td>{row.monthly_runs}</td>
+                          <td>{row.total_runs}</td>
+                          <td>{formatDate(row.created_at)}</td>
+                          <td>
+                            <div className="admin-actions">
+                              {(['free', 'pro', 'owner'] as const).map((plan) => (
+                                <button
+                                  key={plan}
+                                  type="button"
+                                  className={`admin-actions__btn${row.plan === plan ? ' admin-actions__btn--active' : ''}`}
+                                  disabled={isChanging || row.plan === plan}
+                                  onClick={() => void handleSetPlan(row.id, plan)}
+                                >
+                                  {isChanging ? '…' : `Set ${formatRoleLabel(plan)}`}
+                                </button>
+                              ))}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </>
+      )}
+
+      {view === 'billing' && (
+        <div className="admin-section">
+          <h3 className="admin-section__title">All Transactions</h3>
+
+          <div className="admin-filters">
+            {STATUS_FILTERS.map((filter) => (
+              <button
+                key={filter}
+                type="button"
+                className={`admin-filters__btn${statusFilter === filter ? ' admin-filters__btn--active' : ''}`}
+                onClick={() => setStatusFilter(filter)}
+              >
+                {filter === 'all' ? 'All' : formatTransactionStatus(filter)}
+              </button>
+            ))}
+          </div>
+
+          {loadState === 'loading' && transactions.length === 0 ? (
+            <div className="admin-loading glass-panel" role="status">
+              <p>Загрузка транзакций…</p>
+            </div>
+          ) : transactions.length === 0 ? (
+            <div className="admin-empty glass-panel">
+              <p className="admin-empty__title">Нет транзакций</p>
+              <p className="admin-empty__desc">Платежи появятся после checkout пользователей</p>
+            </div>
+          ) : (
+            <div className="admin-table-wrap glass-panel">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Дата</th>
+                    <th>User ID</th>
+                    <th>План</th>
+                    <th>Сумма</th>
+                    <th>Статус</th>
+                    <th>Провайдер</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {transactions.map((tx) => (
+                    <tr key={tx.id}>
+                      <td>{formatDateTime(tx.created_at)}</td>
+                      <td>
+                        <span className="admin-table__meta">{tx.user_id.slice(0, 8)}…</span>
+                      </td>
+                      <td>{formatRoleLabel(tx.plan)}</td>
+                      <td>{formatMoney(tx.amount, tx.currency)}</td>
+                      <td>
+                        <span className={`billing-status billing-status--${tx.status}`}>
+                          {formatTransactionStatus(tx.status)}
+                        </span>
+                      </td>
+                      <td>{formatProviderLabel(tx.provider)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </section>
   );
 };

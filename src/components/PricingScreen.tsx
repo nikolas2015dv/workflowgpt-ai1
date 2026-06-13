@@ -1,20 +1,42 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../context/ToastContext';
-import { changeSubscriptionPlan } from '../lib/subscriptionApi';
+import {
+  createBillingCheckout,
+  fetchBillingSummary,
+  formatMoney,
+  payBillingTransaction,
+} from '../lib/billingApi';
 import {
   canUpgradeToPlan,
   getVisiblePricingPlans,
   isCurrentPlan,
 } from '../lib/pricingPlans';
 import { formatRoleLabel } from '../lib/planLimits';
+import type { BillingTransaction } from '../types/billing';
 import type { UserRole } from '../types/user';
 
 export const PricingScreen: React.FC = () => {
   const { user, effectivePlan, isLoading, isOwner, applySubscriptionResult } = useAuth();
   const { showToast } = useToast();
-  const [upgradingPlan, setUpgradingPlan] = useState<UserRole | null>(null);
+  const [processingPlan, setProcessingPlan] = useState<UserRole | null>(null);
+  const [paying, setPaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingTransaction, setPendingTransaction] = useState<BillingTransaction | null>(null);
+
+  const loadPending = useCallback(async () => {
+    if (!user?.id || isOwner) return;
+    try {
+      const summary = await fetchBillingSummary(user.id);
+      setPendingTransaction(summary.pending_transaction);
+    } catch {
+      setPendingTransaction(null);
+    }
+  }, [user?.id, isOwner]);
+
+  useEffect(() => {
+    void loadPending();
+  }, [loadPending, effectivePlan]);
 
   if (isLoading) {
     return (
@@ -39,23 +61,57 @@ export const PricingScreen: React.FC = () => {
 
   const currentPlan = effectivePlan ?? user.role;
   const plans = getVisiblePricingPlans(isOwner);
+  const proPending = pendingTransaction?.plan === 'pro' ? pendingTransaction : null;
 
-  const handleUpgrade = async (targetPlan: UserRole) => {
+  const handleCreateTransaction = async (targetPlan: UserRole) => {
     if (isOwner || !canUpgradeToPlan(currentPlan, targetPlan)) return;
 
-    setUpgradingPlan(targetPlan);
+    setProcessingPlan(targetPlan);
     setError(null);
 
+    // AUDIT-TEMP: trace Upgrade click → billing checkout
+    console.log('[AUDIT][PricingScreen.handleCreateTransaction] Upgrade clicked', {
+      userId: user.id,
+      currentPlan,
+      targetPlan,
+      endpoint: 'POST /api/billing/checkout',
+      fn: 'createBillingCheckout',
+      file: 'src/lib/billingApi.ts',
+    });
+
     try {
-      const result = await changeSubscriptionPlan(user.id, { plan: targetPlan });
-      applySubscriptionResult(result);
-      showToast('Plan upgraded successfully', 'success');
+      const transaction = await createBillingCheckout(user.id, { plan: targetPlan, provider: 'fake' });
+      if (transaction.status !== 'pending') {
+        throw new Error('Unexpected transaction status. Payment must stay pending until Pay Now.');
+      }
+      setPendingTransaction(transaction);
+      showToast('Checkout created. Tap Pay Now to activate Pro.', 'info');
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'Не удалось сменить тариф';
+      const message = e instanceof Error ? e.message : 'Не удалось создать транзакцию';
       setError(message);
       showToast(message, 'error');
     } finally {
-      setUpgradingPlan(null);
+      setProcessingPlan(null);
+    }
+  };
+
+  const handlePayNow = async () => {
+    if (!proPending || !user?.id) return;
+
+    setPaying(true);
+    setError(null);
+
+    try {
+      const result = await payBillingTransaction(user.id, { transactionId: proPending.id });
+      applySubscriptionResult(result);
+      setPendingTransaction(null);
+      showToast('Plan upgraded successfully', 'success');
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Оплата не прошла';
+      setError(message);
+      showToast(message, 'error');
+    } finally {
+      setPaying(false);
     }
   };
 
@@ -78,7 +134,8 @@ export const PricingScreen: React.FC = () => {
         {plans.map((plan) => {
           const isCurrent = isCurrentPlan(currentPlan, plan.id);
           const canUpgrade = !isOwner && canUpgradeToPlan(currentPlan, plan.id);
-          const isUpgrading = upgradingPlan === plan.id;
+          const isProcessing = processingPlan === plan.id;
+          const hasPendingForPlan = proPending?.plan === plan.id;
 
           return (
             <article
@@ -104,14 +161,28 @@ export const PricingScreen: React.FC = () => {
               <div className="pricing-card__status">
                 {isCurrent ? (
                   <span className="pricing-card__current">Current Plan</span>
+                ) : hasPendingForPlan && proPending ? (
+                  <div className="pricing-card__checkout">
+                    <p className="pricing-card__pending">
+                      Pending: {formatMoney(proPending.amount, proPending.currency)}
+                    </p>
+                    <button
+                      type="button"
+                      className="btn-primary pricing-card__btn"
+                      disabled={paying}
+                      onClick={() => void handlePayNow()}
+                    >
+                      {paying ? 'Processing…' : 'Pay Now'}
+                    </button>
+                  </div>
                 ) : canUpgrade ? (
                   <button
                     type="button"
                     className="btn-primary pricing-card__btn"
-                    disabled={isUpgrading}
-                    onClick={() => void handleUpgrade(plan.id)}
+                    disabled={isProcessing}
+                    onClick={() => void handleCreateTransaction(plan.id)}
                   >
-                    {isUpgrading ? 'Upgrading…' : 'Upgrade'}
+                    {isProcessing ? 'Creating…' : 'Start Checkout'}
                   </button>
                 ) : (
                   <span className="pricing-card__muted">

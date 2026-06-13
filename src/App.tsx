@@ -5,6 +5,7 @@ import { ResultsViewer } from './components/ResultsViewer';
 import { HistoryScreen } from './components/HistoryScreen';
 import { ProfileScreen } from './components/ProfileScreen';
 import { PricingScreen } from './components/PricingScreen';
+import { BillingScreen } from './components/BillingScreen';
 import { AdminScreen } from './components/AdminScreen';
 import { AppTabBar, type AppTab } from './components/AppTabBar';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -72,7 +73,7 @@ const App: React.FC = () => {
 
   const handleTabChange = (tab: AppTab) => {
     setActiveTab(tab);
-    if (tab === 'history' || tab === 'profile' || tab === 'pricing' || tab === 'admin') {
+    if (tab === 'history' || tab === 'profile' || tab === 'pricing' || tab === 'billing' || tab === 'admin') {
       navigate('gallery');
     } else if (state !== 'executor' && state !== 'results') {
       navigate('gallery');
@@ -113,7 +114,9 @@ const App: React.FC = () => {
           ? 'History'
           : activeTab === 'pricing'
             ? 'Pricing'
-            : activeTab === 'admin'
+            : activeTab === 'billing'
+              ? 'Billing'
+              : activeTab === 'admin'
               ? 'Admin'
               : activeTab === 'profile'
                 ? 'Profile'
@@ -196,6 +199,7 @@ const App: React.FC = () => {
               <HistoryScreen onOpen={handleOpenHistoryItem} />
             )}
             {state === 'gallery' && activeTab === 'pricing' && <PricingScreen />}
+            {state === 'gallery' && activeTab === 'billing' && <BillingScreen />}
             {state === 'gallery' && activeTab === 'profile' && <ProfileScreen />}
             {state === 'gallery' && activeTab === 'admin' && isOwner && <AdminScreen />}
             {state === 'executor' && selectedWorkflow && (

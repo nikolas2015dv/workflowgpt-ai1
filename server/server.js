@@ -30,6 +30,7 @@ const {
   isSupabaseConfigured: isUsersDbConfigured,
 } = require('./integrations/users');
 const { getSubscriptionForUser, changeSubscription } = require('./integrations/subscriptions');
+const { assertOwnerAccess, listAdminUsers, getAdminStats } = require('./integrations/admin');
 
 dotenv.config({ path: path.join(__dirname, '.env') });
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
@@ -68,6 +69,33 @@ function requireUserId(req, res, next) {
   }
   req.userId = userId;
   return next();
+}
+
+function requireOwner(req, res, next) {
+  const userId = parseUserIdHeader(req);
+  if (!userId) {
+    return jsonError(res, 401, 'Unauthorized', 'X-User-Id header is required');
+  }
+
+  assertOwnerAccess(userId)
+    .then((ownerUser) => {
+      req.userId = userId;
+      req.ownerUser = ownerUser;
+      return next();
+    })
+    .catch((error) => {
+      if (error.code === 'forbidden') {
+        return jsonError(res, 403, 'forbidden', 'Admin access denied');
+      }
+      if (error.code === 'user_not_found') {
+        return jsonError(res, 404, 'user_not_found', 'User not found');
+      }
+      if (error.code === 'not_configured') {
+        return jsonError(res, 503, 'not_configured', error.message ?? 'Supabase is not configured');
+      }
+      console.error('[requireOwner]', error);
+      return jsonError(res, 500, 'Internal Server Error', error.message ?? 'Owner check failed');
+    });
 }
 
 function enforceRunLimit(req, res, next) {
@@ -238,6 +266,14 @@ app.post('/api/subscription/change', requireUserId, async (req, res) => {
       return jsonError(res, 400, 'Bad Request', 'Field "plan" is required (free, pro, owner)');
     }
 
+    const current = await getSubscriptionForUser(req.userId);
+    if (current.effectivePlan === 'owner') {
+      return jsonError(res, 403, 'forbidden', 'Owner plan cannot be changed');
+    }
+    if (plan === 'owner') {
+      return jsonError(res, 403, 'forbidden', 'Cannot upgrade to owner plan');
+    }
+
     const result = await changeSubscription(req.userId, { plan, status, provider });
     return jsonOk(res, result);
   } catch (error) {
@@ -251,6 +287,54 @@ app.post('/api/subscription/change', requireUserId, async (req, res) => {
             ? 503
             : 500;
     return jsonError(res, status, error.code ?? 'subscription_error', error.message ?? 'Failed to change subscription');
+  }
+});
+
+app.get('/api/admin/users', requireOwner, async (_req, res) => {
+  try {
+    const users = await listAdminUsers();
+    return jsonOk(res, { users });
+  } catch (error) {
+    console.error('[GET /api/admin/users]', error);
+    const status = error.code === 'not_configured' ? 503 : 500;
+    return jsonError(res, status, error.code ?? 'admin_error', error.message ?? 'Failed to load users');
+  }
+});
+
+app.get('/api/admin/stats', requireOwner, async (_req, res) => {
+  try {
+    const stats = await getAdminStats();
+    return jsonOk(res, stats);
+  } catch (error) {
+    console.error('[GET /api/admin/stats]', error);
+    const status = error.code === 'not_configured' ? 503 : 500;
+    return jsonError(res, status, error.code ?? 'admin_error', error.message ?? 'Failed to load stats');
+  }
+});
+
+app.post('/api/admin/subscription/change', requireOwner, async (req, res) => {
+  try {
+    const { userId, plan, status, provider } = req.body ?? {};
+    if (!userId || typeof userId !== 'string') {
+      return jsonError(res, 400, 'Bad Request', 'Field "userId" is required');
+    }
+    if (!plan || typeof plan !== 'string') {
+      return jsonError(res, 400, 'Bad Request', 'Field "plan" is required (free, pro, owner)');
+    }
+
+    const result = await changeSubscription(userId, { plan, status, provider });
+    return jsonOk(res, result);
+  } catch (error) {
+    console.error('[POST /api/admin/subscription/change]', error);
+    const status =
+      error.code === 'user_not_found'
+        ? 404
+        : error.code === 'invalid_plan'
+          ? 400
+          : error.code === 'not_configured'
+            ? 503
+            : 500;
+    return jsonError(res, status, error.code ?? 'admin_error', error.message ?? 'Failed to change subscription');
   }
 });
 

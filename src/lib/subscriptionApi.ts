@@ -1,4 +1,5 @@
 import type { ChangeSubscriptionPayload, SubscriptionInfo } from '../types/subscription';
+import type { AppUser } from '../types/user';
 import { apiUrl, mapFetchError } from './api';
 import { logMobile } from './mobileDebug';
 
@@ -35,10 +36,14 @@ export async function fetchSubscription(userId: string): Promise<SubscriptionInf
   };
 }
 
+export interface ChangeSubscriptionResult extends SubscriptionInfo {
+  user: AppUser;
+}
+
 export async function changeSubscriptionPlan(
   userId: string,
   payload: ChangeSubscriptionPayload
-): Promise<SubscriptionInfo> {
+): Promise<ChangeSubscriptionResult> {
   let response: Response;
   try {
     response = await fetch(apiUrl('/api/subscription/change'), {
@@ -58,16 +63,17 @@ export async function changeSubscriptionPlan(
     subscription?: SubscriptionInfo['subscription'];
     effectivePlan?: SubscriptionInfo['effectivePlan'];
     quota?: SubscriptionInfo['quota'];
-    user?: unknown;
+    user?: AppUser;
     message?: string;
     error?: string;
   }>(response);
 
-  if (!response.ok || !data.subscription || !data.effectivePlan || !data.quota) {
+  if (!response.ok || !data.subscription || !data.effectivePlan || !data.quota || !data.user) {
     throw new Error(data.message ?? data.error ?? `Failed to change subscription (${response.status})`);
   }
 
   return {
+    user: data.user,
     subscription: data.subscription,
     effectivePlan: data.effectivePlan,
     quota: data.quota,

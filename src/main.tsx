@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import { TelegramProvider } from './context/TelegramContext';
 import { AuthProvider } from './context/AuthContext';
+import { ToastProvider, ToastViewport } from './context/ToastContext';
 import { useTelegram } from './hooks/useTelegram';
 import { getApiBaseUrl } from './config/api';
 import { initCacheBust } from './lib/cacheBust';
@@ -16,7 +17,10 @@ const AppBootstrap: React.FC = () => {
   const { isReady } = useTelegram();
   return (
     <AuthProvider telegramReady={isReady}>
-      <App />
+      <ToastProvider>
+        <App />
+        <ToastViewport />
+      </ToastProvider>
     </AuthProvider>
   );
 };

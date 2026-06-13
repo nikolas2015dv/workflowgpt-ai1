@@ -9,8 +9,10 @@ const fallback: AuthContextValue = {
   isLoading: true,
   isAuthenticated: false,
   isDevMode: false,
+  isOwner: false,
   error: null,
   refreshUser: async () => {},
+  applySubscriptionResult: () => {},
 };
 
 export function useAuth(): AuthContextValue {

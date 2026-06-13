@@ -7,20 +7,22 @@ import {
 } from '../lib/authApi';
 import { setAuthUser as setSessionUser } from '../lib/authSession';
 import { isTelegramMiniApp, parseTelegramUser } from '../lib/telegramWebApp';
-import type { AppUser, UsageQuota } from '../types/user';
-import type { Subscription } from '../types/subscription';
+import type { AppUser, UsageQuota, UserRole } from '../types/user';
+import type { Subscription, SubscriptionInfo } from '../types/subscription';
 import { logError } from '../lib/mobileDebug';
 
 export interface AuthContextValue {
   user: AppUser | null;
   subscription: Subscription | null;
-  effectivePlan: AppUser['role'] | null;
+  effectivePlan: UserRole | null;
   usage: UsageQuota | null;
   isLoading: boolean;
   isAuthenticated: boolean;
   isDevMode: boolean;
+  isOwner: boolean;
   error: string | null;
   refreshUser: () => Promise<void>;
+  applySubscriptionResult: (result: SubscriptionInfo & { user: AppUser }) => void;
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
@@ -85,6 +87,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children, telegramRe
     }
   }, [applyUser]);
 
+  const applySubscriptionResult = useCallback(
+    (result: SubscriptionInfo & { user: AppUser }) => {
+      applySession(result.user, result.subscription, result.effectivePlan, result.quota);
+      setError(null);
+    },
+    [applySession]
+  );
+
   const refreshUser = useCallback(async () => {
     if (!user?.id) return;
     try {
@@ -92,7 +102,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children, telegramRe
       applySession(
         result.user,
         (result as { subscription?: Subscription }).subscription ?? null,
-        (result as { effectivePlan?: AppUser['role'] }).effectivePlan ?? result.user.role,
+        (result as { effectivePlan?: UserRole }).effectivePlan ?? result.user.role,
         result.usage as UsageQuota
       );
       setError(null);
@@ -100,7 +110,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children, telegramRe
       logError('auth-refresh', e);
       setError(e instanceof Error ? e.message : 'Не удалось обновить профиль');
     }
-  }, [applyUser, user?.id]);
+  }, [applySession, user?.id]);
+
+  const isOwner = (effectivePlan ?? user?.role) === 'owner';
 
   useEffect(() => {
     if (!telegramReady) return;
@@ -116,10 +128,23 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children, telegramRe
       isLoading,
       isAuthenticated: Boolean(user?.id),
       isDevMode,
+      isOwner,
       error,
       refreshUser,
+      applySubscriptionResult,
     }),
-    [user, subscription, effectivePlan, usage, isLoading, isDevMode, error, refreshUser]
+    [
+      user,
+      subscription,
+      effectivePlan,
+      usage,
+      isLoading,
+      isDevMode,
+      isOwner,
+      error,
+      refreshUser,
+      applySubscriptionResult,
+    ]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

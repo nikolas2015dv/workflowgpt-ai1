@@ -4,6 +4,8 @@ import { TaskExecutor } from './components/TaskExecutor';
 import { ResultsViewer } from './components/ResultsViewer';
 import { HistoryScreen } from './components/HistoryScreen';
 import { ProfileScreen } from './components/ProfileScreen';
+import { PricingScreen } from './components/PricingScreen';
+import { AdminScreen } from './components/AdminScreen';
 import { AppTabBar, type AppTab } from './components/AppTabBar';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { AppFooter } from './components/AppFooter';
@@ -19,7 +21,7 @@ type ResultsReturnTo = 'gallery' | 'history';
 
 const App: React.FC = () => {
   const { user: tgUser, isTelegram, isReady } = useTelegram();
-  const { user: appUser, refreshUser } = useAuth();
+  const { user: appUser, refreshUser, isOwner } = useAuth();
   const [activeTab, setActiveTab] = useState<AppTab>('workflows');
   const [state, setState] = useState<AppState>('gallery');
   const [selectedWorkflow, setSelectedWorkflow] = useState<string | null>(null);
@@ -70,7 +72,7 @@ const App: React.FC = () => {
 
   const handleTabChange = (tab: AppTab) => {
     setActiveTab(tab);
-    if (tab === 'history' || tab === 'profile') {
+    if (tab === 'history' || tab === 'profile' || tab === 'pricing' || tab === 'admin') {
       navigate('gallery');
     } else if (state !== 'executor' && state !== 'results') {
       navigate('gallery');
@@ -109,9 +111,13 @@ const App: React.FC = () => {
         ? selectedWorkflow ?? ''
         : activeTab === 'history'
           ? 'History'
-          : activeTab === 'profile'
-            ? 'Profile'
-            : 'Автоматизация с AI';
+          : activeTab === 'pricing'
+            ? 'Pricing'
+            : activeTab === 'admin'
+              ? 'Admin'
+              : activeTab === 'profile'
+                ? 'Profile'
+                : 'Автоматизация с AI';
 
   const headerUser = appUser ?? tgUser;
   const avatarLetter = headerUser.first_name.charAt(0).toUpperCase();
@@ -189,7 +195,9 @@ const App: React.FC = () => {
             {state === 'gallery' && activeTab === 'history' && (
               <HistoryScreen onOpen={handleOpenHistoryItem} />
             )}
+            {state === 'gallery' && activeTab === 'pricing' && <PricingScreen />}
             {state === 'gallery' && activeTab === 'profile' && <ProfileScreen />}
+            {state === 'gallery' && activeTab === 'admin' && isOwner && <AdminScreen />}
             {state === 'executor' && selectedWorkflow && (
               <TaskExecutor
                 workflow={selectedWorkflow}
@@ -210,7 +218,9 @@ const App: React.FC = () => {
         </ErrorBoundary>
       </main>
 
-      {showTabBar && <AppTabBar activeTab={activeTab} onChange={handleTabChange} />}
+      {showTabBar && (
+        <AppTabBar activeTab={activeTab} isOwner={isOwner} onChange={handleTabChange} />
+      )}
 
       <AppFooter />
     </div>

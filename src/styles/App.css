@@ -2940,6 +2940,125 @@ html.tg-mini-app #root {
   background: rgba(42, 171, 238, 0.12);
 }
 
+.admin-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-sm);
+  margin-bottom: var(--space-sm);
+}
+
+.admin-search {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--tg-separator);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--tg-text);
+  font-size: 14px;
+}
+
+.admin-search::placeholder {
+  color: var(--tg-hint);
+}
+
+.admin-table__row--selected {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.admin-table tbody tr {
+  cursor: pointer;
+}
+
+.admin-actions__btn--danger {
+  color: #ff8f8f;
+  border-color: rgba(255, 143, 143, 0.35);
+}
+
+.admin-user-details {
+  margin-top: var(--space-md);
+  padding: var(--space-md);
+}
+
+.admin-user-details__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+}
+
+.admin-user-details__title {
+  margin: 0 0 4px;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.admin-user-details__subtitle {
+  margin: 0;
+  font-size: 13px;
+  color: var(--tg-hint);
+}
+
+.admin-user-details__close {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--tg-separator);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--tg-text);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.admin-user-details__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+}
+
+.admin-detail-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--tg-separator);
+}
+
+.admin-detail-row__label {
+  font-size: 11px;
+  color: var(--tg-hint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.admin-detail-row__value {
+  font-size: 13px;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.admin-user-details__section {
+  margin-top: var(--space-md);
+}
+
+.admin-user-details__section-title {
+  margin: 0 0 var(--space-sm);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.admin-user-details__loading,
+.admin-user-details__error {
+  margin-top: var(--space-md);
+  padding: var(--space-md);
+  text-align: center;
+}
+
 /* ─── Reduced motion ─── */
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -2973,6 +3092,10 @@ html.tg-mini-app #root {
   }
 
   .admin-stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-user-details__grid {
     grid-template-columns: 1fr;
   }
 

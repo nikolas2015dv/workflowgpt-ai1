@@ -1,7 +1,13 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../context/ToastContext';
-import { adminChangeUserPlan, fetchAdminStats, fetchAdminUsers } from '../lib/adminApi';
+import {
+  adminChangeUserPlan,
+  cancelAdminBillingTransaction,
+  fetchAdminProRequests,
+  fetchAdminStats,
+  fetchAdminUsers,
+} from '../lib/adminApi';
 import {
   fetchAdminBillingStats,
   fetchAdminBillingTransactions,
@@ -10,14 +16,21 @@ import {
   formatTransactionStatus,
 } from '../lib/billingApi';
 import { formatRoleLabel } from '../lib/planLimits';
-import type { AdminStats, AdminUserRow } from '../types/admin';
+import type { AdminPlanFilter, AdminProRequest, AdminStats, AdminUserRow } from '../types/admin';
 import type { BillingStats, BillingStatusFilter, BillingTransaction } from '../types/billing';
 import type { UserRole } from '../types/user';
+import { AdminUserDetailsPanel } from './AdminUserDetailsPanel';
 
 type LoadState = 'loading' | 'ready' | 'error';
 type AdminView = 'overview' | 'billing';
 
 const STATUS_FILTERS: BillingStatusFilter[] = ['all', 'paid', 'pending', 'failed', 'refunded'];
+const PLAN_FILTERS: { id: AdminPlanFilter; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'free', label: 'Free' },
+  { id: 'pro', label: 'Pro' },
+  { id: 'owner', label: 'Owner' },
+];
 
 function formatDate(value: string): string {
   try {
@@ -49,10 +62,27 @@ function formatUserLabel(row: AdminUserRow): string {
   return row.username ? `${name} (@${row.username})` : name;
 }
 
+function formatProRequestUserLabel(request: AdminProRequest): string {
+  const name = request.first_name?.trim() || 'User';
+  return request.username ? `${name} (@${request.username})` : name;
+}
+
 function formatTransactionUserLabel(userId: string, users: AdminUserRow[]): string {
   const row = users.find((u) => u.id === userId);
   if (!row) return userId.slice(0, 8) + '…';
   return formatUserLabel(row);
+}
+
+function matchesUserSearch(row: AdminUserRow, query: string): boolean {
+  const search = query.trim().toLowerCase();
+  if (!search) return true;
+
+  return (
+    (row.username ?? '').toLowerCase().includes(search) ||
+    (row.first_name ?? '').toLowerCase().includes(search) ||
+    (row.last_name ?? '').toLowerCase().includes(search) ||
+    String(row.telegram_id).includes(search)
+  );
 }
 
 export const AdminScreen: React.FC = () => {
@@ -65,23 +95,27 @@ export const AdminScreen: React.FC = () => {
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [billingStats, setBillingStats] = useState<BillingStats | null>(null);
   const [transactions, setTransactions] = useState<BillingTransaction[]>([]);
-  const [pendingRequests, setPendingRequests] = useState<BillingTransaction[]>([]);
+  const [proRequests, setProRequests] = useState<AdminProRequest[]>([]);
   const [statusFilter, setStatusFilter] = useState<BillingStatusFilter>('pending');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [planFilter, setPlanFilter] = useState<AdminPlanFilter>('all');
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [changingUserId, setChangingUserId] = useState<string | null>(null);
+  const [cancellingTxId, setCancellingTxId] = useState<string | null>(null);
 
   const loadOverview = useCallback(async () => {
     if (!user?.id || !isOwner) return;
 
-    const [nextUsers, nextStats, nextBillingStats, nextPending] = await Promise.all([
+    const [nextUsers, nextStats, nextBillingStats, nextProRequests] = await Promise.all([
       fetchAdminUsers(user.id),
       fetchAdminStats(user.id),
       fetchAdminBillingStats(user.id),
-      fetchAdminBillingTransactions(user.id, 'pending'),
+      fetchAdminProRequests(user.id),
     ]);
     setUsers(nextUsers);
     setStats(nextStats);
     setBillingStats(nextBillingStats);
-    setPendingRequests(nextPending);
+    setProRequests(nextProRequests);
   }, [user?.id, isOwner]);
 
   const loadBilling = useCallback(async () => {
@@ -120,6 +154,18 @@ export const AdminScreen: React.FC = () => {
     void loadData();
   }, [loadData]);
 
+  const filteredUsers = useMemo(() => {
+    return users.filter((row) => {
+      const matchesPlan = planFilter === 'all' || row.plan === planFilter;
+      return matchesPlan && matchesUserSearch(row, searchQuery);
+    });
+  }, [users, planFilter, searchQuery]);
+
+  const selectedUser = useMemo(
+    () => users.find((row) => row.id === selectedUserId) ?? null,
+    [users, selectedUserId]
+  );
+
   const handleSetPlan = async (targetUserId: string, plan: UserRole) => {
     if (!user?.id) return;
 
@@ -132,6 +178,21 @@ export const AdminScreen: React.FC = () => {
       showToast(e instanceof Error ? e.message : 'Не удалось сменить тариф', 'error');
     } finally {
       setChangingUserId(null);
+    }
+  };
+
+  const handleCancelRequest = async (transactionId: string) => {
+    if (!user?.id) return;
+
+    setCancellingTxId(transactionId);
+    try {
+      await cancelAdminBillingTransaction(user.id, transactionId);
+      showToast('Заявка отменена', 'success');
+      await loadData();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Не удалось отменить заявку', 'error');
+    } finally {
+      setCancellingTxId(null);
     }
   };
 
@@ -250,9 +311,9 @@ export const AdminScreen: React.FC = () => {
           </div>
 
           <div className="admin-section">
-            <h3 className="admin-section__title">Заявки на Pro (ожидают оплаты)</h3>
+            <h3 className="admin-section__title">Pro Requests</h3>
 
-            {pendingRequests.length === 0 ? (
+            {proRequests.length === 0 ? (
               <div className="admin-empty glass-panel">
                 <p className="admin-empty__title">Нет заявок</p>
                 <p className="admin-empty__desc">Новые заявки появятся после checkout на Pricing</p>
@@ -262,39 +323,50 @@ export const AdminScreen: React.FC = () => {
                 <table className="admin-table">
                   <thead>
                     <tr>
-                      <th>Дата</th>
-                      <th>Пользователь</th>
-                      <th>Сумма</th>
-                      <th>Статус</th>
-                      <th>Действие</th>
+                      <th>User</th>
+                      <th>Telegram ID</th>
+                      <th>Amount</th>
+                      <th>Created at</th>
+                      <th>Status</th>
+                      <th>Действия</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {pendingRequests.map((tx) => {
-                      const isChanging = changingUserId === tx.user_id;
+                    {proRequests.map((request) => {
+                      const isChanging = changingUserId === request.user_id;
+                      const isCancelling = cancellingTxId === request.id;
                       return (
-                        <tr key={tx.id}>
-                          <td>{formatDateTime(tx.created_at)}</td>
+                        <tr key={request.id}>
                           <td>
-                            <span className="admin-table__name">
-                              {formatTransactionUserLabel(tx.user_id, users)}
+                            <span className="admin-table__name">{formatProRequestUserLabel(request)}</span>
+                          </td>
+                          <td>{request.telegram_id ?? '—'}</td>
+                          <td>{formatMoney(request.amount, request.currency)}</td>
+                          <td>{formatDateTime(request.created_at)}</td>
+                          <td>
+                            <span className={`billing-status billing-status--${request.status}`}>
+                              {formatTransactionStatus(request.status)}
                             </span>
                           </td>
-                          <td>{formatMoney(tx.amount, tx.currency)}</td>
                           <td>
-                            <span className={`billing-status billing-status--${tx.status}`}>
-                              {formatTransactionStatus(tx.status)}
-                            </span>
-                          </td>
-                          <td>
-                            <button
-                              type="button"
-                              className="admin-actions__btn"
-                              disabled={isChanging}
-                              onClick={() => void handleSetPlan(tx.user_id, 'pro')}
-                            >
-                              {isChanging ? '…' : 'Set Pro'}
-                            </button>
+                            <div className="admin-actions">
+                              <button
+                                type="button"
+                                className="admin-actions__btn"
+                                disabled={isChanging || isCancelling}
+                                onClick={() => void handleSetPlan(request.user_id, 'pro')}
+                              >
+                                {isChanging ? '…' : 'Set Pro'}
+                              </button>
+                              <button
+                                type="button"
+                                className="admin-actions__btn admin-actions__btn--danger"
+                                disabled={isChanging || isCancelling}
+                                onClick={() => void handleCancelRequest(request.id)}
+                              >
+                                {isCancelling ? '…' : 'Cancel Request'}
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -308,10 +380,33 @@ export const AdminScreen: React.FC = () => {
           <div className="admin-section">
             <h3 className="admin-section__title">Users</h3>
 
-            {users.length === 0 ? (
+            <div className="admin-toolbar glass-panel">
+              <input
+                type="search"
+                className="admin-search"
+                placeholder="Найти пользователя..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                aria-label="Поиск пользователей"
+              />
+              <div className="admin-filters">
+                {PLAN_FILTERS.map((filter) => (
+                  <button
+                    key={filter.id}
+                    type="button"
+                    className={`admin-filters__btn${planFilter === filter.id ? ' admin-filters__btn--active' : ''}`}
+                    onClick={() => setPlanFilter(filter.id)}
+                  >
+                    {filter.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {filteredUsers.length === 0 ? (
               <div className="admin-empty glass-panel">
-                <p className="admin-empty__title">Нет пользователей</p>
-                <p className="admin-empty__desc">Список пуст или ещё не загружен</p>
+                <p className="admin-empty__title">Пользователи не найдены</p>
+                <p className="admin-empty__desc">Измените поиск или фильтр</p>
               </div>
             ) : (
               <div className="admin-table-wrap glass-panel">
@@ -328,10 +423,15 @@ export const AdminScreen: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {users.map((row) => {
+                    {filteredUsers.map((row) => {
                       const isChanging = changingUserId === row.id;
+                      const isSelected = selectedUserId === row.id;
                       return (
-                        <tr key={row.id}>
+                        <tr
+                          key={row.id}
+                          className={isSelected ? 'admin-table__row--selected' : undefined}
+                          onClick={() => setSelectedUserId(row.id)}
+                        >
                           <td>
                             <span className="admin-table__name">{formatUserLabel(row)}</span>
                             <span className="admin-table__meta">ID {row.telegram_id}</span>
@@ -349,7 +449,7 @@ export const AdminScreen: React.FC = () => {
                           <td>{row.monthly_runs}</td>
                           <td>{row.total_runs}</td>
                           <td>{formatDate(row.created_at)}</td>
-                          <td>
+                          <td onClick={(e) => e.stopPropagation()}>
                             <div className="admin-actions">
                               {(['free', 'pro', 'owner'] as const).map((plan) => (
                                 <button
@@ -370,6 +470,14 @@ export const AdminScreen: React.FC = () => {
                   </tbody>
                 </table>
               </div>
+            )}
+
+            {selectedUser && user?.id && (
+              <AdminUserDetailsPanel
+                adminUserId={user.id}
+                user={selectedUser}
+                onClose={() => setSelectedUserId(null)}
+              />
             )}
           </div>
         </>

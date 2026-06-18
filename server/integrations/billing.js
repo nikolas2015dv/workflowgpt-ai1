@@ -294,6 +294,29 @@ async function markTransactionFailed(transactionId, reason = null) {
   return updated;
 }
 
+async function cancelTransaction(transactionId) {
+  const transaction = await getTransactionById(transactionId);
+  if (!transaction) {
+    const error = new Error('Transaction not found');
+    error.code = 'transaction_not_found';
+    throw error;
+  }
+
+  if (transaction.status !== 'pending') {
+    const error = new Error('Only pending transactions can be cancelled');
+    error.code = 'invalid_status';
+    throw error;
+  }
+
+  const updated = await updateTransactionStatus(transactionId, 'cancelled');
+  await logBillingEvent(transaction.user_id, 'transaction.cancelled', {
+    transaction_id: transactionId,
+    plan: transaction.plan,
+  });
+
+  return updated;
+}
+
 async function markTransactionRefunded(transactionId) {
   const transaction = await getTransactionById(transactionId);
   if (!transaction) {
@@ -441,6 +464,7 @@ module.exports = {
   markTransactionPaid,
   markTransactionFailed,
   markTransactionRefunded,
+  cancelTransaction,
   processFakePayment,
   getUserTransactions,
   getUserBillingSummary,

@@ -30,7 +30,7 @@ const {
   isSupabaseConfigured: isUsersDbConfigured,
 } = require('./integrations/users');
 const { getSubscriptionForUser, changeSubscription } = require('./integrations/subscriptions');
-const { assertOwnerAccess, listAdminUsers, getAdminStats } = require('./integrations/admin');
+const { assertOwnerAccess, listAdminUsers, getAdminStats, getUserAdminHistory, getUserAdminBilling, listProRequests } = require('./integrations/admin');
 const {
   createTransaction,
   processFakePayment,
@@ -38,6 +38,7 @@ const {
   getUserBillingSummary,
   getBillingStats,
   listAllTransactions,
+  cancelTransaction,
 } = require('./integrations/billing');
 
 dotenv.config({ path: path.join(__dirname, '.env') });
@@ -449,14 +450,80 @@ app.get('/api/admin/billing/transactions', requireOwner, async (req, res) => {
   }
 });
 
-app.get('/api/admin/users', requireOwner, async (_req, res) => {
+app.get('/api/admin/users', requireOwner, async (req, res) => {
   try {
-    const users = await listAdminUsers();
+    const query = typeof req.query.query === 'string' ? req.query.query : '';
+    const plan = typeof req.query.plan === 'string' ? req.query.plan : '';
+    const users = await listAdminUsers({ query, plan });
     return jsonOk(res, { users });
   } catch (error) {
     console.error('[GET /api/admin/users]', error);
     const status = error.code === 'not_configured' ? 503 : 500;
     return jsonError(res, status, error.code ?? 'admin_error', error.message ?? 'Failed to load users');
+  }
+});
+
+app.get('/api/admin/users/:userId/history', requireOwner, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const history = await getUserAdminHistory(userId, { limit: 20 });
+    return jsonOk(res, { history });
+  } catch (error) {
+    console.error('[GET /api/admin/users/:userId/history]', error);
+    const status =
+      error.code === 'user_not_found'
+        ? 404
+        : error.code === 'not_configured'
+          ? 503
+          : 500;
+    return jsonError(res, status, error.code ?? 'admin_error', error.message ?? 'Failed to load user history');
+  }
+});
+
+app.get('/api/admin/users/:userId/billing', requireOwner, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const transactions = await getUserAdminBilling(userId, { limit: 20 });
+    return jsonOk(res, { transactions });
+  } catch (error) {
+    console.error('[GET /api/admin/users/:userId/billing]', error);
+    const status =
+      error.code === 'user_not_found'
+        ? 404
+        : error.code === 'not_configured'
+          ? 503
+          : 500;
+    return jsonError(res, status, error.code ?? 'admin_error', error.message ?? 'Failed to load user billing');
+  }
+});
+
+app.get('/api/admin/pro-requests', requireOwner, async (_req, res) => {
+  try {
+    const requests = await listProRequests();
+    return jsonOk(res, { requests });
+  } catch (error) {
+    console.error('[GET /api/admin/pro-requests]', error);
+    const status = error.code === 'not_configured' ? 503 : 500;
+    return jsonError(res, status, error.code ?? 'admin_error', error.message ?? 'Failed to load pro requests');
+  }
+});
+
+app.post('/api/admin/billing/transactions/:transactionId/cancel', requireOwner, async (req, res) => {
+  try {
+    const { transactionId } = req.params;
+    const transaction = await cancelTransaction(transactionId);
+    return jsonOk(res, { transaction });
+  } catch (error) {
+    console.error('[POST /api/admin/billing/transactions/:transactionId/cancel]', error);
+    const status =
+      error.code === 'transaction_not_found'
+        ? 404
+        : error.code === 'invalid_status'
+          ? 400
+          : error.code === 'not_configured'
+            ? 503
+            : 500;
+    return jsonError(res, status, error.code ?? 'billing_error', error.message ?? 'Failed to cancel transaction');
   }
 });
 

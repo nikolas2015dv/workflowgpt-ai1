@@ -1,4 +1,12 @@
-import type { AdminChangePlanPayload, AdminStats, AdminUserRow } from '../types/admin';
+import type {
+  AdminChangePlanPayload,
+  AdminPlanFilter,
+  AdminProRequest,
+  AdminStats,
+  AdminUserHistoryRow,
+  AdminUserRow,
+} from '../types/admin';
+import type { BillingTransaction } from '../types/billing';
 import type { SubscriptionInfo } from '../types/subscription';
 import type { AppUser } from '../types/user';
 import { apiUrl, mapFetchError } from './api';
@@ -15,10 +23,25 @@ function adminHeaders(userId: string): Record<string, string> {
   return { Accept: 'application/json', 'X-User-Id': userId };
 }
 
-export async function fetchAdminUsers(adminUserId: string): Promise<AdminUserRow[]> {
+export interface FetchAdminUsersOptions {
+  query?: string;
+  plan?: AdminPlanFilter;
+}
+
+export async function fetchAdminUsers(
+  adminUserId: string,
+  options: FetchAdminUsersOptions = {}
+): Promise<AdminUserRow[]> {
+  const params = new URLSearchParams();
+  if (options.query?.trim()) params.set('query', options.query.trim());
+  if (options.plan && options.plan !== 'all') params.set('plan', options.plan);
+
+  const query = params.toString();
+  const url = apiUrl(`/api/admin/users${query ? `?${query}` : ''}`);
+
   let response: Response;
   try {
-    response = await fetch(apiUrl('/api/admin/users'), {
+    response = await fetch(url, {
       method: 'GET',
       headers: adminHeaders(adminUserId),
     });
@@ -49,6 +72,92 @@ export async function fetchAdminStats(adminUserId: string): Promise<AdminStats> 
     throw new Error(data.message ?? data.error ?? `Admin stats failed (${response.status})`);
   }
   return data;
+}
+
+export async function fetchAdminUserHistory(
+  adminUserId: string,
+  targetUserId: string
+): Promise<AdminUserHistoryRow[]> {
+  let response: Response;
+  try {
+    response = await fetch(apiUrl(`/api/admin/users/${encodeURIComponent(targetUserId)}/history`), {
+      method: 'GET',
+      headers: adminHeaders(adminUserId),
+    });
+  } catch (e) {
+    throw mapFetchError(e);
+  }
+
+  const data = await parseJson<{ history?: AdminUserHistoryRow[]; message?: string; error?: string }>(response);
+  if (!response.ok) {
+    throw new Error(data.message ?? data.error ?? `Admin user history failed (${response.status})`);
+  }
+  return data.history ?? [];
+}
+
+export async function fetchAdminUserBilling(
+  adminUserId: string,
+  targetUserId: string
+): Promise<BillingTransaction[]> {
+  let response: Response;
+  try {
+    response = await fetch(apiUrl(`/api/admin/users/${encodeURIComponent(targetUserId)}/billing`), {
+      method: 'GET',
+      headers: adminHeaders(adminUserId),
+    });
+  } catch (e) {
+    throw mapFetchError(e);
+  }
+
+  const data = await parseJson<{ transactions?: BillingTransaction[]; message?: string; error?: string }>(
+    response
+  );
+  if (!response.ok) {
+    throw new Error(data.message ?? data.error ?? `Admin user billing failed (${response.status})`);
+  }
+  return data.transactions ?? [];
+}
+
+export async function fetchAdminProRequests(adminUserId: string): Promise<AdminProRequest[]> {
+  let response: Response;
+  try {
+    response = await fetch(apiUrl('/api/admin/pro-requests'), {
+      method: 'GET',
+      headers: adminHeaders(adminUserId),
+    });
+  } catch (e) {
+    throw mapFetchError(e);
+  }
+
+  const data = await parseJson<{ requests?: AdminProRequest[]; message?: string; error?: string }>(response);
+  if (!response.ok) {
+    throw new Error(data.message ?? data.error ?? `Admin pro requests failed (${response.status})`);
+  }
+  return data.requests ?? [];
+}
+
+export async function cancelAdminBillingTransaction(
+  adminUserId: string,
+  transactionId: string
+): Promise<BillingTransaction> {
+  let response: Response;
+  try {
+    response = await fetch(
+      apiUrl(`/api/admin/billing/transactions/${encodeURIComponent(transactionId)}/cancel`),
+      {
+        method: 'POST',
+        headers: adminHeaders(adminUserId),
+      }
+    );
+  } catch (e) {
+    throw mapFetchError(e);
+  }
+
+  const data = await parseJson<{ transaction?: BillingTransaction; message?: string; error?: string }>(response);
+  if (!response.ok || !data.transaction) {
+    throw new Error(data.message ?? data.error ?? `Cancel transaction failed (${response.status})`);
+  }
+  return data.transaction;
 }
 
 export interface AdminChangePlanResult {

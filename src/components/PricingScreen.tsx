@@ -2,10 +2,10 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../context/ToastContext';
 import {
+  BILLING_PENDING_MESSAGE,
   createBillingCheckout,
   fetchBillingSummary,
   formatMoney,
-  payBillingTransaction,
 } from '../lib/billingApi';
 import {
   canUpgradeToPlan,
@@ -17,10 +17,9 @@ import type { BillingTransaction } from '../types/billing';
 import type { UserRole } from '../types/user';
 
 export const PricingScreen: React.FC = () => {
-  const { user, effectivePlan, isLoading, isOwner, applySubscriptionResult } = useAuth();
+  const { user, effectivePlan, isLoading, isOwner } = useAuth();
   const { showToast } = useToast();
   const [processingPlan, setProcessingPlan] = useState<UserRole | null>(null);
-  const [paying, setPaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingTransaction, setPendingTransaction] = useState<BillingTransaction | null>(null);
 
@@ -69,49 +68,19 @@ export const PricingScreen: React.FC = () => {
     setProcessingPlan(targetPlan);
     setError(null);
 
-    // AUDIT-TEMP: trace Upgrade click → billing checkout
-    console.log('[AUDIT][PricingScreen.handleCreateTransaction] Upgrade clicked', {
-      userId: user.id,
-      currentPlan,
-      targetPlan,
-      endpoint: 'POST /api/billing/checkout',
-      fn: 'createBillingCheckout',
-      file: 'src/lib/billingApi.ts',
-    });
-
     try {
-      const transaction = await createBillingCheckout(user.id, { plan: targetPlan, provider: 'fake' });
+      const transaction = await createBillingCheckout(user.id, { plan: targetPlan, provider: 'manual' });
       if (transaction.status !== 'pending') {
-        throw new Error('Unexpected transaction status. Payment must stay pending until Pay Now.');
+        throw new Error('Unexpected transaction status.');
       }
       setPendingTransaction(transaction);
-      showToast('Checkout created. Tap Pay Now to activate Pro.', 'info');
+      showToast(BILLING_PENDING_MESSAGE, 'info');
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Не удалось создать транзакцию';
       setError(message);
       showToast(message, 'error');
     } finally {
       setProcessingPlan(null);
-    }
-  };
-
-  const handlePayNow = async () => {
-    if (!proPending || !user?.id) return;
-
-    setPaying(true);
-    setError(null);
-
-    try {
-      const result = await payBillingTransaction(user.id, { transactionId: proPending.id });
-      applySubscriptionResult(result);
-      setPendingTransaction(null);
-      showToast('Plan upgraded successfully', 'success');
-    } catch (e) {
-      const message = e instanceof Error ? e.message : 'Оплата не прошла';
-      setError(message);
-      showToast(message, 'error');
-    } finally {
-      setPaying(false);
     }
   };
 
@@ -150,7 +119,12 @@ export const PricingScreen: React.FC = () => {
                 <p className="pricing-card__desc">{plan.description}</p>
               </header>
 
-              <p className="pricing-card__limit">{plan.limitLabel}</p>
+              <p className="pricing-card__limit">
+                {plan.priceLabel ?? plan.limitLabel}
+              </p>
+              {plan.priceLabel && (
+                <p className="pricing-card__limit-note">{plan.limitLabel}</p>
+              )}
 
               <ul className="pricing-card__features">
                 {plan.features.map((feature) => (
@@ -164,16 +138,10 @@ export const PricingScreen: React.FC = () => {
                 ) : hasPendingForPlan && proPending ? (
                   <div className="pricing-card__checkout">
                     <p className="pricing-card__pending">
-                      Pending: {formatMoney(proPending.amount, proPending.currency)}
+                      Заявка на {formatRoleLabel(proPending.plan)}:{' '}
+                      {formatMoney(proPending.amount, proPending.currency)} — ожидает оплаты
                     </p>
-                    <button
-                      type="button"
-                      className="btn-primary pricing-card__btn"
-                      disabled={paying}
-                      onClick={() => void handlePayNow()}
-                    >
-                      {paying ? 'Processing…' : 'Pay Now'}
-                    </button>
+                    <p className="pricing-card__pending-note">{BILLING_PENDING_MESSAGE}</p>
                   </div>
                 ) : canUpgrade ? (
                   <button
@@ -182,7 +150,7 @@ export const PricingScreen: React.FC = () => {
                     disabled={isProcessing}
                     onClick={() => void handleCreateTransaction(plan.id)}
                   >
-                    {isProcessing ? 'Creating…' : 'Start Checkout'}
+                    {isProcessing ? 'Создание…' : 'Start Checkout'}
                   </button>
                 ) : (
                   <span className="pricing-card__muted">

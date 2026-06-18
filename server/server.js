@@ -286,6 +286,9 @@ app.get('/api/subscription', requireUserId, async (req, res) => {
 });
 
 app.post('/api/subscription/change', requireUserId, async (req, res) => {
+  console.log(
+    `[AUDIT]\nroute=/api/subscription/change\nuserId=${req.userId}\nbody=${JSON.stringify(req.body ?? {})}`
+  );
   try {
     const { plan, status, provider } = req.body ?? {};
     if (!plan || typeof plan !== 'string') {
@@ -327,6 +330,9 @@ app.post('/api/subscription/change', requireUserId, async (req, res) => {
 });
 
 app.post('/api/billing/checkout', requireUserId, async (req, res) => {
+  console.log(
+    `[AUDIT]\nroute=/api/billing/checkout\nuserId=${req.userId}\nbody=${JSON.stringify(req.body ?? {})}`
+  );
   try {
     const { plan, provider } = req.body ?? {};
     if (!plan || typeof plan !== 'string') {
@@ -360,6 +366,9 @@ app.post('/api/billing/checkout', requireUserId, async (req, res) => {
 });
 
 app.post('/api/billing/pay', requireUserId, async (req, res) => {
+  console.log(
+    `[AUDIT]\nroute=/api/billing/pay\nuserId=${req.userId}\nbody=${JSON.stringify(req.body ?? {})}`
+  );
   try {
     const { transactionId } = req.body ?? {};
     if (!transactionId || typeof transactionId !== 'string') {

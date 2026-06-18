@@ -22,7 +22,7 @@ create table if not exists public.billing_transactions (
   provider text not null default 'fake' check (provider in ('fake', 'stripe', 'telegram', 'manual')),
   provider_transaction_id text,
   amount numeric(12, 2) not null default 0,
-  currency text not null default 'USD',
+  currency text not null default 'RUB',
   status text not null default 'pending' check (status in ('pending', 'paid', 'failed', 'cancelled', 'refunded')),
   plan text not null check (plan in ('free', 'pro', 'owner')),
   created_at timestamptz not null default now(),

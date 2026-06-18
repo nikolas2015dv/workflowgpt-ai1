@@ -9,6 +9,9 @@ import type {
 } from '../types/billing';
 import { apiUrl, mapFetchError } from './api';
 
+export const BILLING_PENDING_MESSAGE =
+  'Оплата пока не подключена. Заявка на Pro создана. Администратор свяжется с вами для оплаты.';
+
 async function parseJson<T>(response: Response): Promise<T> {
   try {
     return (await response.json()) as T;
@@ -63,18 +66,9 @@ export async function createBillingCheckout(
   userId: string,
   payload: BillingCheckoutPayload
 ): Promise<BillingTransaction> {
-  const url = apiUrl('/api/billing/checkout');
-  // AUDIT-TEMP: log immediately before network request
-  console.log('[AUDIT][billingApi.createBillingCheckout] sending request', {
-    url,
-    method: 'POST',
-    userId,
-    payload,
-  });
-
   let response: Response;
   try {
-    response = await fetch(url, {
+    response = await fetch(apiUrl('/api/billing/checkout'), {
       method: 'POST',
       headers: {
         ...billingHeaders(userId),
@@ -87,14 +81,6 @@ export async function createBillingCheckout(
   }
 
   const data = await parseJson<{ transaction?: BillingTransaction; message?: string; error?: string }>(response);
-  console.log('[AUDIT][billingApi.createBillingCheckout] response received', {
-    url,
-    status: response.status,
-    ok: response.ok,
-    hasTransaction: Boolean(data.transaction),
-    error: data.error,
-    message: data.message,
-  });
   if (!response.ok || !data.transaction) {
     throw new Error(data.message ?? data.error ?? `Checkout failed (${response.status})`);
   }
@@ -180,11 +166,16 @@ export function formatTransactionStatus(status: string): string {
 }
 
 export function formatMoney(amount: number, currency: string): string {
+  if (currency === 'RUB') {
+    return `${Math.round(amount).toLocaleString('ru-RU')} ₽`;
+  }
+
   try {
-    return new Intl.NumberFormat('en-US', {
+    return new Intl.NumberFormat('ru-RU', {
       style: 'currency',
       currency,
-      minimumFractionDigits: 2,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
     }).format(amount);
   } catch {
     return `${amount} ${currency}`;
@@ -196,7 +187,7 @@ export function formatProviderLabel(provider: string): string {
     fake: 'Test',
     stripe: 'Stripe',
     telegram: 'Telegram Stars',
-    manual: 'Manual',
+    manual: 'Заявка',
   };
   return map[provider] ?? provider;
 }

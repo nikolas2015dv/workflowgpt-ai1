@@ -129,7 +129,7 @@ async function getPendingTransactionForPlan(userId, plan) {
   return mapTransactionRow(data);
 }
 
-async function createTransaction(userId, { plan, provider = 'fake', amount, currency }) {
+async function createTransaction(userId, { plan, provider = 'manual', amount, currency }) {
   const user = await getUserById(userId);
   if (!user) {
     const error = new Error('User not found');
@@ -163,7 +163,7 @@ async function createTransaction(userId, { plan, provider = 'fake', amount, curr
   }
 
   const pricing = getPlanPricing(nextPlan);
-  const nextProvider = VALID_PROVIDERS.has(provider) ? provider : 'fake';
+  const nextProvider = VALID_PROVIDERS.has(provider) ? provider : 'manual';
   const now = new Date().toISOString();
   const client = getClientOrThrow();
 
@@ -174,7 +174,7 @@ async function createTransaction(userId, { plan, provider = 'fake', amount, curr
     provider: nextProvider,
     provider_transaction_id: null,
     amount: amount ?? pricing?.amount ?? 0,
-    currency: currency ?? pricing?.currency ?? 'USD',
+    currency: currency ?? pricing?.currency ?? 'RUB',
     status: 'pending',
     plan: nextPlan,
     created_at: now,
@@ -381,7 +381,7 @@ async function getUserBillingSummary(userId) {
     transactions_count: transactions.length,
     active_plan: subscriptionInfo.effectivePlan,
     pending_transaction: pendingTransaction,
-    currency: paidTransactions[0]?.currency ?? 'USD',
+    currency: paidTransactions[0]?.currency ?? 'RUB',
   };
 }
 
@@ -409,7 +409,7 @@ async function getBillingStats() {
     paid_transactions: paid.length,
     pending_transactions: pending.length,
     active_pro_users: (subscriptions ?? []).length,
-    currency: paid[0]?.currency ?? 'USD',
+    currency: paid[0]?.currency ?? 'RUB',
   };
 }
 

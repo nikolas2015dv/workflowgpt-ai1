@@ -49,6 +49,12 @@ function formatUserLabel(row: AdminUserRow): string {
   return row.username ? `${name} (@${row.username})` : name;
 }
 
+function formatTransactionUserLabel(userId: string, users: AdminUserRow[]): string {
+  const row = users.find((u) => u.id === userId);
+  if (!row) return userId.slice(0, 8) + '…';
+  return formatUserLabel(row);
+}
+
 export const AdminScreen: React.FC = () => {
   const { user, isOwner } = useAuth();
   const { showToast } = useToast();
@@ -59,31 +65,36 @@ export const AdminScreen: React.FC = () => {
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [billingStats, setBillingStats] = useState<BillingStats | null>(null);
   const [transactions, setTransactions] = useState<BillingTransaction[]>([]);
-  const [statusFilter, setStatusFilter] = useState<BillingStatusFilter>('all');
+  const [pendingRequests, setPendingRequests] = useState<BillingTransaction[]>([]);
+  const [statusFilter, setStatusFilter] = useState<BillingStatusFilter>('pending');
   const [changingUserId, setChangingUserId] = useState<string | null>(null);
 
   const loadOverview = useCallback(async () => {
     if (!user?.id || !isOwner) return;
 
-    const [nextUsers, nextStats, nextBillingStats] = await Promise.all([
+    const [nextUsers, nextStats, nextBillingStats, nextPending] = await Promise.all([
       fetchAdminUsers(user.id),
       fetchAdminStats(user.id),
       fetchAdminBillingStats(user.id),
+      fetchAdminBillingTransactions(user.id, 'pending'),
     ]);
     setUsers(nextUsers);
     setStats(nextStats);
     setBillingStats(nextBillingStats);
+    setPendingRequests(nextPending);
   }, [user?.id, isOwner]);
 
   const loadBilling = useCallback(async () => {
     if (!user?.id || !isOwner) return;
 
-    const [nextBillingStats, nextTransactions] = await Promise.all([
+    const [nextBillingStats, nextTransactions, nextUsers] = await Promise.all([
       fetchAdminBillingStats(user.id),
       fetchAdminBillingTransactions(user.id, statusFilter),
+      fetchAdminUsers(user.id),
     ]);
     setBillingStats(nextBillingStats);
     setTransactions(nextTransactions);
+    setUsers(nextUsers);
   }, [user?.id, isOwner, statusFilter]);
 
   const loadData = useCallback(async () => {
@@ -152,7 +163,7 @@ export const AdminScreen: React.FC = () => {
     );
   }
 
-  const currency = billingStats?.currency ?? 'USD';
+  const currency = billingStats?.currency ?? 'RUB';
 
   const overviewStatCards = stats
     ? [
@@ -236,6 +247,62 @@ export const AdminScreen: React.FC = () => {
                 <p className="admin-stat-card__label">{card.label}</p>
               </article>
             ))}
+          </div>
+
+          <div className="admin-section">
+            <h3 className="admin-section__title">Заявки на Pro (ожидают оплаты)</h3>
+
+            {pendingRequests.length === 0 ? (
+              <div className="admin-empty glass-panel">
+                <p className="admin-empty__title">Нет заявок</p>
+                <p className="admin-empty__desc">Новые заявки появятся после checkout на Pricing</p>
+              </div>
+            ) : (
+              <div className="admin-table-wrap glass-panel">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Дата</th>
+                      <th>Пользователь</th>
+                      <th>Сумма</th>
+                      <th>Статус</th>
+                      <th>Действие</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pendingRequests.map((tx) => {
+                      const isChanging = changingUserId === tx.user_id;
+                      return (
+                        <tr key={tx.id}>
+                          <td>{formatDateTime(tx.created_at)}</td>
+                          <td>
+                            <span className="admin-table__name">
+                              {formatTransactionUserLabel(tx.user_id, users)}
+                            </span>
+                          </td>
+                          <td>{formatMoney(tx.amount, tx.currency)}</td>
+                          <td>
+                            <span className={`billing-status billing-status--${tx.status}`}>
+                              {formatTransactionStatus(tx.status)}
+                            </span>
+                          </td>
+                          <td>
+                            <button
+                              type="button"
+                              className="admin-actions__btn"
+                              disabled={isChanging}
+                              onClick={() => void handleSetPlan(tx.user_id, 'pro')}
+                            >
+                              {isChanging ? '…' : 'Set Pro'}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
           <div className="admin-section">
@@ -340,7 +407,7 @@ export const AdminScreen: React.FC = () => {
                 <thead>
                   <tr>
                     <th>Дата</th>
-                    <th>User ID</th>
+                    <th>Пользователь</th>
                     <th>План</th>
                     <th>Сумма</th>
                     <th>Статус</th>
@@ -352,7 +419,9 @@ export const AdminScreen: React.FC = () => {
                     <tr key={tx.id}>
                       <td>{formatDateTime(tx.created_at)}</td>
                       <td>
-                        <span className="admin-table__meta">{tx.user_id.slice(0, 8)}…</span>
+                        <span className="admin-table__name">
+                          {formatTransactionUserLabel(tx.user_id, users)}
+                        </span>
                       </td>
                       <td>{formatRoleLabel(tx.plan)}</td>
                       <td>{formatMoney(tx.amount, tx.currency)}</td>

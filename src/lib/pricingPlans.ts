@@ -6,9 +6,16 @@ export interface PricingPlanDefinition {
   name: string;
   description: string;
   limitLabel: string;
+  priceLabel?: string;
   features: string[];
   hidden?: boolean;
 }
+
+export const PRO_PLAN_PRICE = {
+  amount: 990,
+  currency: 'RUB' as const,
+  label: '990 ₽ / месяц',
+};
 
 export const PRICING_PLANS: PricingPlanDefinition[] = [
   {
@@ -22,6 +29,7 @@ export const PRICING_PLANS: PricingPlanDefinition[] = [
     id: 'pro',
     name: 'Pro',
     description: 'Для активной работы с AI workflow',
+    priceLabel: PRO_PLAN_PRICE.label,
     limitLabel: '500 запусков в месяц',
     features: [
       '500 запусков в месяц',

@@ -2,8 +2,8 @@
 const BILLING_PLANS = {
   pro: {
     plan: 'pro',
-    amount: 9.99,
-    currency: 'USD',
+    amount: 990,
+    currency: 'RUB',
     label: 'WorkflowGPT Pro',
   },
 };

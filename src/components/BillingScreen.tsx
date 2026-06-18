@@ -1,13 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { useToast } from '../context/ToastContext';
 import {
+  BILLING_PENDING_MESSAGE,
   fetchBillingHistory,
   fetchBillingSummary,
   formatMoney,
   formatProviderLabel,
   formatTransactionStatus,
-  payBillingTransaction,
 } from '../lib/billingApi';
 import { formatRoleLabel } from '../lib/planLimits';
 import type { BillingSummary, BillingTransaction } from '../types/billing';
@@ -29,13 +28,11 @@ function formatDateTime(value: string): string {
 }
 
 export const BillingScreen: React.FC = () => {
-  const { user, effectivePlan, isLoading: authLoading, applySubscriptionResult } = useAuth();
-  const { showToast } = useToast();
+  const { user, effectivePlan, isLoading: authLoading } = useAuth();
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<BillingSummary | null>(null);
   const [transactions, setTransactions] = useState<BillingTransaction[]>([]);
-  const [payingId, setPayingId] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     if (!user?.id) return;
@@ -61,22 +58,6 @@ export const BillingScreen: React.FC = () => {
     if (!user?.id) return;
     void loadData();
   }, [user?.id, loadData]);
-
-  const handlePayPending = async (transactionId: string) => {
-    if (!user?.id) return;
-
-    setPayingId(transactionId);
-    try {
-      const result = await payBillingTransaction(user.id, { transactionId });
-      applySubscriptionResult(result);
-      showToast('Plan upgraded successfully', 'success');
-      await loadData();
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : 'Оплата не прошла', 'error');
-    } finally {
-      setPayingId(null);
-    }
-  };
 
   if (authLoading) {
     return (
@@ -124,7 +105,7 @@ export const BillingScreen: React.FC = () => {
   }
 
   const currentPlan = summary?.active_plan ?? effectivePlan ?? user.role;
-  const currency = summary?.currency ?? 'USD';
+  const currency = summary?.currency ?? 'RUB';
   const pending = summary?.pending_transaction;
 
   return (
@@ -150,17 +131,10 @@ export const BillingScreen: React.FC = () => {
         {pending && (
           <div className="billing-pending">
             <p className="billing-pending__text">
-              Ожидает оплаты: {formatRoleLabel(pending.plan)} —{' '}
-              {formatMoney(pending.amount, pending.currency)}
+              Заявка на {formatRoleLabel(pending.plan)}: {formatMoney(pending.amount, pending.currency)} —{' '}
+              {formatTransactionStatus(pending.status)}
             </p>
-            <button
-              type="button"
-              className="btn-primary billing-pending__btn"
-              disabled={payingId === pending.id}
-              onClick={() => void handlePayPending(pending.id)}
-            >
-              {payingId === pending.id ? 'Processing…' : 'Pay Now'}
-            </button>
+            <p className="billing-pending__note">{BILLING_PENDING_MESSAGE}</p>
           </div>
         )}
       </article>

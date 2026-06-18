@@ -2418,6 +2418,13 @@ html.tg-mini-app #root {
   letter-spacing: -0.02em;
 }
 
+.pricing-card__limit-note {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--tg-hint);
+}
+
 .pricing-card__features {
   margin: 0;
   padding: 0 0 0 18px;
@@ -2757,6 +2764,13 @@ html.tg-mini-app #root {
   color: #ffb86a;
 }
 
+.billing-pending__note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--tg-hint);
+}
+
 .billing-pending__btn {
   width: 100%;
 }
@@ -2859,6 +2873,14 @@ html.tg-mini-app #root {
   text-align: center;
   font-size: 12px;
   color: #ffb86a;
+}
+
+.pricing-card__pending-note {
+  margin: 0;
+  text-align: center;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--tg-hint);
 }
 
 .admin-subtabs {

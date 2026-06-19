@@ -2,10 +2,10 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../context/ToastContext';
 import {
-  BILLING_PENDING_MESSAGE,
-  createBillingCheckout,
+  BILLING_REQUEST_SENT_MESSAGE,
   fetchBillingSummary,
   formatMoney,
+  submitProRequest,
 } from '../lib/billingApi';
 import {
   canUpgradeToPlan,
@@ -13,13 +13,15 @@ import {
   isCurrentPlan,
 } from '../lib/pricingPlans';
 import { formatRoleLabel } from '../lib/planLimits';
-import type { BillingTransaction } from '../types/billing';
+import type { BillingTransaction, ProRequestPayload } from '../types/billing';
 import type { UserRole } from '../types/user';
+import { ProRequestForm } from './ProRequestForm';
 
 export const PricingScreen: React.FC = () => {
   const { user, effectivePlan, isLoading, isOwner } = useAuth();
   const { showToast } = useToast();
-  const [processingPlan, setProcessingPlan] = useState<UserRole | null>(null);
+  const [submittingPlan, setSubmittingPlan] = useState<UserRole | null>(null);
+  const [requestFormPlan, setRequestFormPlan] = useState<UserRole | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pendingTransaction, setPendingTransaction] = useState<BillingTransaction | null>(null);
 
@@ -61,26 +63,28 @@ export const PricingScreen: React.FC = () => {
   const currentPlan = effectivePlan ?? user.role;
   const plans = getVisiblePricingPlans(isOwner);
   const proPending = pendingTransaction?.plan === 'pro' ? pendingTransaction : null;
+  const defaultUsername = user.username ? (user.username.startsWith('@') ? user.username : `@${user.username}`) : '';
 
-  const handleCreateTransaction = async (targetPlan: UserRole) => {
+  const handleSubmitProRequest = async (targetPlan: UserRole, payload: ProRequestPayload) => {
     if (isOwner || !canUpgradeToPlan(currentPlan, targetPlan)) return;
 
-    setProcessingPlan(targetPlan);
+    setSubmittingPlan(targetPlan);
     setError(null);
 
     try {
-      const transaction = await createBillingCheckout(user.id, { plan: targetPlan, provider: 'manual' });
+      const transaction = await submitProRequest(user.id, payload);
       if (transaction.status !== 'pending') {
         throw new Error('Unexpected transaction status.');
       }
       setPendingTransaction(transaction);
-      showToast(BILLING_PENDING_MESSAGE, 'info');
+      setRequestFormPlan(null);
+      showToast(BILLING_REQUEST_SENT_MESSAGE, 'info');
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'Не удалось создать транзакцию';
+      const message = e instanceof Error ? e.message : 'Не удалось отправить заявку';
       setError(message);
       showToast(message, 'error');
     } finally {
-      setProcessingPlan(null);
+      setSubmittingPlan(null);
     }
   };
 
@@ -103,7 +107,8 @@ export const PricingScreen: React.FC = () => {
         {plans.map((plan) => {
           const isCurrent = isCurrentPlan(currentPlan, plan.id);
           const canUpgrade = !isOwner && canUpgradeToPlan(currentPlan, plan.id);
-          const isProcessing = processingPlan === plan.id;
+          const isSubmitting = submittingPlan === plan.id;
+          const showRequestForm = requestFormPlan === plan.id;
           const hasPendingForPlan = proPending?.plan === plan.id;
 
           return (
@@ -139,18 +144,26 @@ export const PricingScreen: React.FC = () => {
                   <div className="pricing-card__checkout">
                     <p className="pricing-card__pending">
                       Заявка на {formatRoleLabel(proPending.plan)}:{' '}
-                      {formatMoney(proPending.amount, proPending.currency)} — ожидает оплаты
+                      {formatMoney(proPending.amount, proPending.currency)}
                     </p>
-                    <p className="pricing-card__pending-note">{BILLING_PENDING_MESSAGE}</p>
+                    <p className="pricing-card__pending-note">{BILLING_REQUEST_SENT_MESSAGE}</p>
                   </div>
+                ) : showRequestForm ? (
+                  <ProRequestForm
+                    defaultName={user.first_name ?? ''}
+                    defaultUsername={defaultUsername}
+                    submitting={isSubmitting}
+                    onCancel={() => setRequestFormPlan(null)}
+                    onSubmit={(payload) => void handleSubmitProRequest(plan.id, payload)}
+                  />
                 ) : canUpgrade ? (
                   <button
                     type="button"
                     className="btn-primary pricing-card__btn"
-                    disabled={isProcessing}
-                    onClick={() => void handleCreateTransaction(plan.id)}
+                    disabled={isSubmitting}
+                    onClick={() => setRequestFormPlan(plan.id)}
                   >
-                    {isProcessing ? 'Создание…' : 'Start Checkout'}
+                    Upgrade to Pro
                   </button>
                 ) : (
                   <span className="pricing-card__muted">

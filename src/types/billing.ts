@@ -1,8 +1,21 @@
-import type { Subscription } from './subscription';
-import type { AppUser, UsageQuota, UserRole } from './user';
+import type { UserRole } from './user';
 
-export type BillingTransactionStatus = 'pending' | 'paid' | 'failed' | 'cancelled' | 'refunded';
+export type BillingTransactionStatus =
+  | 'pending'
+  | 'paid'
+  | 'paid_manual'
+  | 'failed'
+  | 'cancelled'
+  | 'refunded';
+
 export type BillingProvider = 'fake' | 'stripe' | 'telegram' | 'manual';
+
+export interface ProRequestMeta {
+  name: string;
+  username: string;
+  contact: string;
+  comment: string;
+}
 
 export interface BillingTransaction {
   id: string;
@@ -15,6 +28,7 @@ export interface BillingTransaction {
   plan: UserRole;
   created_at: string;
   updated_at: string;
+  request_meta?: ProRequestMeta | null;
 }
 
 export interface BillingSummary {
@@ -30,16 +44,23 @@ export interface BillingCheckoutPayload {
   provider?: BillingProvider;
 }
 
+export interface ProRequestPayload {
+  name: string;
+  username: string;
+  contact: string;
+  comment?: string;
+}
+
 export interface BillingPayPayload {
   transactionId: string;
 }
 
 export interface BillingPayResult {
   transaction: BillingTransaction;
-  user: AppUser;
-  subscription: Subscription;
+  user: import('./user').AppUser;
+  subscription: import('./subscription').Subscription;
   effectivePlan: UserRole;
-  quota: UsageQuota;
+  quota: import('./user').UsageQuota;
 }
 
 export interface BillingStats {
@@ -48,6 +69,9 @@ export interface BillingStats {
   pending_transactions: number;
   active_pro_users: number;
   currency: string;
+  pending_requests: number;
+  approved_requests: number;
+  rejected_requests: number;
 }
 
 export type BillingStatusFilter = BillingTransactionStatus | 'all';

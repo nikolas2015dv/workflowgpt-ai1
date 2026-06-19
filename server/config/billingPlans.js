@@ -8,7 +8,7 @@ const BILLING_PLANS = {
   },
 };
 
-const VALID_TRANSACTION_STATUSES = new Set(['pending', 'paid', 'failed', 'cancelled', 'refunded']);
+const VALID_TRANSACTION_STATUSES = new Set(['pending', 'paid', 'paid_manual', 'failed', 'cancelled', 'refunded']);
 const VALID_PROVIDERS = new Set(['fake', 'stripe', 'telegram', 'manual']);
 const VALID_BILLABLE_PLANS = new Set(['pro']);
 

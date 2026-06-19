@@ -53,4 +53,8 @@ export interface AdminProRequest {
   currency: string;
   status: BillingTransactionStatus;
   created_at: string;
+  request_name: string;
+  request_username: string;
+  contact: string;
+  comment: string;
 }

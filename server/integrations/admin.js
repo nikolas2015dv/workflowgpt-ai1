@@ -184,6 +184,7 @@ async function listProRequests() {
 
   return (transactions ?? []).map((tx) => {
     const user = userById.get(tx.user_id);
+    const meta = tx.request_meta && typeof tx.request_meta === 'object' ? tx.request_meta : {};
     return {
       id: tx.id,
       user_id: tx.user_id,
@@ -195,6 +196,10 @@ async function listProRequests() {
       currency: tx.currency,
       status: tx.status,
       created_at: tx.created_at,
+      request_name: String(meta.name ?? '').trim(),
+      request_username: String(meta.username ?? '').trim(),
+      contact: String(meta.contact ?? '').trim(),
+      comment: String(meta.comment ?? '').trim(),
     };
   });
 }

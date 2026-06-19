@@ -3,10 +3,11 @@ import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../context/ToastContext';
 import {
   adminChangeUserPlan,
-  cancelAdminBillingTransaction,
+  approveAdminProRequest,
   fetchAdminProRequests,
   fetchAdminStats,
   fetchAdminUsers,
+  rejectAdminProRequest,
 } from '../lib/adminApi';
 import {
   fetchAdminBillingStats,
@@ -20,11 +21,12 @@ import type { AdminPlanFilter, AdminProRequest, AdminStats, AdminUserRow } from 
 import type { BillingStats, BillingStatusFilter, BillingTransaction } from '../types/billing';
 import type { UserRole } from '../types/user';
 import { AdminUserDetailsPanel } from './AdminUserDetailsPanel';
+import { AdminProRequestDetails } from './AdminProRequestDetails';
 
 type LoadState = 'loading' | 'ready' | 'error';
 type AdminView = 'overview' | 'billing';
 
-const STATUS_FILTERS: BillingStatusFilter[] = ['all', 'paid', 'pending', 'failed', 'refunded'];
+const STATUS_FILTERS: BillingStatusFilter[] = ['all', 'paid', 'paid_manual', 'pending', 'failed', 'refunded', 'cancelled'];
 const PLAN_FILTERS: { id: AdminPlanFilter; label: string }[] = [
   { id: 'all', label: 'All' },
   { id: 'free', label: 'Free' },
@@ -100,8 +102,10 @@ export const AdminScreen: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [planFilter, setPlanFilter] = useState<AdminPlanFilter>('all');
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [selectedProRequestId, setSelectedProRequestId] = useState<string | null>(null);
   const [changingUserId, setChangingUserId] = useState<string | null>(null);
-  const [cancellingTxId, setCancellingTxId] = useState<string | null>(null);
+  const [approvingTxId, setApprovingTxId] = useState<string | null>(null);
+  const [rejectingTxId, setRejectingTxId] = useState<string | null>(null);
 
   const loadOverview = useCallback(async () => {
     if (!user?.id || !isOwner) return;
@@ -166,6 +170,43 @@ export const AdminScreen: React.FC = () => {
     [users, selectedUserId]
   );
 
+  const selectedProRequest = useMemo(
+    () => proRequests.find((request) => request.id === selectedProRequestId) ?? null,
+    [proRequests, selectedProRequestId]
+  );
+
+  const handleApproveRequest = async (transactionId: string) => {
+    if (!user?.id) return;
+
+    setApprovingTxId(transactionId);
+    try {
+      await approveAdminProRequest(user.id, transactionId);
+      showToast('Заявка одобрена, пользователь переведён на Pro', 'success');
+      setSelectedProRequestId(null);
+      await loadData();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Не удалось одобрить заявку', 'error');
+    } finally {
+      setApprovingTxId(null);
+    }
+  };
+
+  const handleRejectRequest = async (transactionId: string) => {
+    if (!user?.id) return;
+
+    setRejectingTxId(transactionId);
+    try {
+      await rejectAdminProRequest(user.id, transactionId);
+      showToast('Заявка отклонена', 'success');
+      setSelectedProRequestId(null);
+      await loadData();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Не удалось отклонить заявку', 'error');
+    } finally {
+      setRejectingTxId(null);
+    }
+  };
+
   const handleSetPlan = async (targetUserId: string, plan: UserRole) => {
     if (!user?.id) return;
 
@@ -178,21 +219,6 @@ export const AdminScreen: React.FC = () => {
       showToast(e instanceof Error ? e.message : 'Не удалось сменить тариф', 'error');
     } finally {
       setChangingUserId(null);
-    }
-  };
-
-  const handleCancelRequest = async (transactionId: string) => {
-    if (!user?.id) return;
-
-    setCancellingTxId(transactionId);
-    try {
-      await cancelAdminBillingTransaction(user.id, transactionId);
-      showToast('Заявка отменена', 'success');
-      await loadData();
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : 'Не удалось отменить заявку', 'error');
-    } finally {
-      setCancellingTxId(null);
     }
   };
 
@@ -235,6 +261,14 @@ export const AdminScreen: React.FC = () => {
         { label: 'Запусков всего', value: stats.total_workflows },
         { label: 'Записей истории', value: stats.total_history_records },
         { label: 'Запусков в месяце', value: stats.workflows_this_month },
+      ]
+    : [];
+
+  const requestStatCards = billingStats
+    ? [
+        { label: 'Pending Requests', value: billingStats.pending_requests ?? 0 },
+        { label: 'Approved Requests', value: billingStats.approved_requests ?? 0 },
+        { label: 'Rejected Requests', value: billingStats.rejected_requests ?? 0 },
       ]
     : [];
 
@@ -311,12 +345,24 @@ export const AdminScreen: React.FC = () => {
           </div>
 
           <div className="admin-section">
+            <h3 className="admin-section__title">Pro Request Stats</h3>
+            <div className="admin-stats-grid admin-stats-grid--requests">
+              {requestStatCards.map((card) => (
+                <article key={card.label} className="admin-stat-card glass-card">
+                  <p className="admin-stat-card__value">{card.value}</p>
+                  <p className="admin-stat-card__label">{card.label}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+
+          <div className="admin-section">
             <h3 className="admin-section__title">Pro Requests</h3>
 
             {proRequests.length === 0 ? (
               <div className="admin-empty glass-panel">
                 <p className="admin-empty__title">Нет заявок</p>
-                <p className="admin-empty__desc">Новые заявки появятся после checkout на Pricing</p>
+                <p className="admin-empty__desc">Новые заявки появятся после отправки формы на Pricing</p>
               </div>
             ) : (
               <div className="admin-table-wrap glass-panel">
@@ -328,17 +374,21 @@ export const AdminScreen: React.FC = () => {
                       <th>Amount</th>
                       <th>Created at</th>
                       <th>Status</th>
-                      <th>Действия</th>
                     </tr>
                   </thead>
                   <tbody>
                     {proRequests.map((request) => {
-                      const isChanging = changingUserId === request.user_id;
-                      const isCancelling = cancellingTxId === request.id;
+                      const isSelected = selectedProRequestId === request.id;
                       return (
-                        <tr key={request.id}>
+                        <tr
+                          key={request.id}
+                          className={isSelected ? 'admin-table__row--selected' : undefined}
+                          onClick={() => setSelectedProRequestId(request.id)}
+                        >
                           <td>
-                            <span className="admin-table__name">{formatProRequestUserLabel(request)}</span>
+                            <span className="admin-table__name">
+                              {request.request_name || formatProRequestUserLabel(request)}
+                            </span>
                           </td>
                           <td>{request.telegram_id ?? '—'}</td>
                           <td>{formatMoney(request.amount, request.currency)}</td>
@@ -348,32 +398,23 @@ export const AdminScreen: React.FC = () => {
                               {formatTransactionStatus(request.status)}
                             </span>
                           </td>
-                          <td>
-                            <div className="admin-actions">
-                              <button
-                                type="button"
-                                className="admin-actions__btn"
-                                disabled={isChanging || isCancelling}
-                                onClick={() => void handleSetPlan(request.user_id, 'pro')}
-                              >
-                                {isChanging ? '…' : 'Set Pro'}
-                              </button>
-                              <button
-                                type="button"
-                                className="admin-actions__btn admin-actions__btn--danger"
-                                disabled={isChanging || isCancelling}
-                                onClick={() => void handleCancelRequest(request.id)}
-                              >
-                                {isCancelling ? '…' : 'Cancel Request'}
-                              </button>
-                            </div>
-                          </td>
                         </tr>
                       );
                     })}
                   </tbody>
                 </table>
               </div>
+            )}
+
+            {selectedProRequest && (
+              <AdminProRequestDetails
+                request={selectedProRequest}
+                approving={approvingTxId === selectedProRequest.id}
+                rejecting={rejectingTxId === selectedProRequest.id}
+                onApprove={() => void handleApproveRequest(selectedProRequest.id)}
+                onReject={() => void handleRejectRequest(selectedProRequest.id)}
+                onClose={() => setSelectedProRequestId(null)}
+              />
             )}
           </div>
 

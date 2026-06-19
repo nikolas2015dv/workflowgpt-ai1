@@ -37,6 +37,7 @@ function mapCustomerRow(row) {
 
 function mapTransactionRow(row) {
   if (!row) return null;
+  const rawMeta = row.request_meta && typeof row.request_meta === 'object' ? row.request_meta : null;
   return {
     id: row.id,
     user_id: row.user_id,
@@ -48,6 +49,14 @@ function mapTransactionRow(row) {
     plan: row.plan,
     created_at: row.created_at,
     updated_at: row.updated_at,
+    request_meta: rawMeta
+      ? {
+          name: String(rawMeta.name ?? '').trim(),
+          username: String(rawMeta.username ?? '').trim(),
+          contact: String(rawMeta.contact ?? '').trim(),
+          comment: String(rawMeta.comment ?? '').trim(),
+        }
+      : null,
   };
 }
 
@@ -201,6 +210,132 @@ async function createTransaction(userId, { plan, provider = 'manual', amount, cu
   });
 
   return transaction;
+}
+
+async function createProRequest(userId, { name, username, contact, comment }) {
+  const contactName = String(name ?? '').trim();
+  const contactUsername = String(username ?? '').trim();
+  const contactInfo = String(contact ?? '').trim();
+  const contactComment = String(comment ?? '').trim();
+
+  if (!contactName) {
+    const error = new Error('Field "name" is required');
+    error.code = 'invalid_request';
+    throw error;
+  }
+  if (!contactUsername) {
+    const error = new Error('Field "username" is required');
+    error.code = 'invalid_request';
+    throw error;
+  }
+  if (!contactInfo) {
+    const error = new Error('Field "contact" is required');
+    error.code = 'invalid_request';
+    throw error;
+  }
+
+  const existingPending = await getPendingTransactionForPlan(userId, 'pro');
+  if (existingPending) {
+    return existingPending;
+  }
+
+  const user = await getUserById(userId);
+  if (!user) {
+    const error = new Error('User not found');
+    error.code = 'user_not_found';
+    throw error;
+  }
+
+  if (isOwnerUser(user)) {
+    const error = new Error('Owner plan does not require billing');
+    error.code = 'forbidden';
+    throw error;
+  }
+
+  const subscriptionInfo = await getSubscriptionForUser(userId);
+  if (subscriptionInfo.effectivePlan === 'pro') {
+    const error = new Error('You are already on this plan');
+    error.code = 'already_subscribed';
+    throw error;
+  }
+
+  const pricing = getPlanPricing('pro');
+  const now = new Date().toISOString();
+  const client = getClientOrThrow();
+
+  await ensureBillingCustomer(userId);
+
+  const request_meta = {
+    name: contactName,
+    username: contactUsername,
+    contact: contactInfo,
+    comment: contactComment,
+  };
+
+  const row = {
+    user_id: userId,
+    provider: 'manual',
+    provider_transaction_id: null,
+    amount: pricing?.amount ?? 990,
+    currency: pricing?.currency ?? 'RUB',
+    status: 'pending',
+    plan: 'pro',
+    request_meta,
+    created_at: now,
+    updated_at: now,
+  };
+
+  const { data, error } = await client.from(TRANSACTIONS_TABLE).insert(row).select('*').single();
+  if (error) throw error;
+
+  const transaction = mapTransactionRow(data);
+  await logBillingEvent(userId, 'pro_request.created', {
+    transaction_id: transaction.id,
+    request_meta,
+  });
+
+  return transaction;
+}
+
+async function approveProRequest(transactionId) {
+  const transaction = await getTransactionById(transactionId);
+  if (!transaction) {
+    const error = new Error('Transaction not found');
+    error.code = 'transaction_not_found';
+    throw error;
+  }
+
+  if (transaction.plan !== 'pro') {
+    const error = new Error('Only Pro requests can be approved');
+    error.code = 'invalid_plan';
+    throw error;
+  }
+
+  if (transaction.status !== 'pending') {
+    const error = new Error(`Cannot approve ${transaction.status} transaction`);
+    error.code = 'invalid_status';
+    throw error;
+  }
+
+  const updated = await updateTransactionStatus(transactionId, 'paid_manual', {
+    provider_transaction_id: `manual_${transactionId.slice(0, 8)}_${Date.now()}`,
+  });
+
+  const subscriptionResult = await changeSubscription(transaction.user_id, {
+    plan: 'pro',
+    status: 'active',
+    provider: 'manual',
+    source: 'admin',
+  });
+
+  await logBillingEvent(transaction.user_id, 'pro_request.approved', {
+    transaction_id: transactionId,
+  });
+
+  return {
+    transaction: updated,
+    subscription: subscriptionResult,
+  };
 }
 
 async function updateTransactionStatus(transactionId, status, extra = {}) {
@@ -394,7 +529,7 @@ async function getUserBillingSummary(userId) {
   const subscriptionInfo = await getSubscriptionForUser(userId);
   const transactions = await getUserTransactions(userId, { limit: 100 });
 
-  const paidTransactions = transactions.filter((t) => t.status === 'paid');
+  const paidTransactions = transactions.filter((t) => t.status === 'paid' || t.status === 'paid_manual');
   const totalPaid = paidTransactions.reduce((sum, t) => sum + t.amount, 0);
   const pendingTransaction =
     transactions.find((t) => t.status === 'pending' && t.plan === 'pro') ?? null;
@@ -415,8 +550,10 @@ async function getBillingStats() {
   if (error) throw error;
 
   const rows = (transactions ?? []).map(mapTransactionRow);
-  const paid = rows.filter((t) => t.status === 'paid');
+  const paid = rows.filter((t) => t.status === 'paid' || t.status === 'paid_manual');
   const pending = rows.filter((t) => t.status === 'pending');
+  const proRows = rows.filter((t) => t.plan === 'pro');
+  const hasRequestMeta = (row) => Boolean(row.request_meta);
 
   const totalRevenue = paid.reduce((sum, t) => sum + t.amount, 0);
 
@@ -433,6 +570,9 @@ async function getBillingStats() {
     pending_transactions: pending.length,
     active_pro_users: (subscriptions ?? []).length,
     currency: paid[0]?.currency ?? 'RUB',
+    pending_requests: proRows.filter((t) => t.status === 'pending' && hasRequestMeta(t)).length,
+    approved_requests: proRows.filter((t) => t.status === 'paid_manual').length,
+    rejected_requests: proRows.filter((t) => t.status === 'cancelled' && hasRequestMeta(t)).length,
   };
 }
 
@@ -459,12 +599,14 @@ module.exports = {
   EVENTS_TABLE,
   ensureBillingCustomer,
   createTransaction,
+  createProRequest,
   getTransactionById,
   getPendingTransactionForPlan,
   markTransactionPaid,
   markTransactionFailed,
   markTransactionRefunded,
   cancelTransaction,
+  approveProRequest,
   processFakePayment,
   getUserTransactions,
   getUserBillingSummary,

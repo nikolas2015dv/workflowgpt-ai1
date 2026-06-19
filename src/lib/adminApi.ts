@@ -140,10 +140,55 @@ export async function cancelAdminBillingTransaction(
   adminUserId: string,
   transactionId: string
 ): Promise<BillingTransaction> {
+  return rejectAdminProRequest(adminUserId, transactionId);
+}
+
+export async function approveAdminProRequest(
+  adminUserId: string,
+  transactionId: string
+): Promise<AdminChangePlanResult> {
   let response: Response;
   try {
     response = await fetch(
-      apiUrl(`/api/admin/billing/transactions/${encodeURIComponent(transactionId)}/cancel`),
+      apiUrl(`/api/admin/pro-requests/${encodeURIComponent(transactionId)}/approve`),
+      {
+        method: 'POST',
+        headers: adminHeaders(adminUserId),
+      }
+    );
+  } catch (e) {
+    throw mapFetchError(e);
+  }
+
+  const data = await parseJson<{
+    user?: AppUser;
+    subscription?: SubscriptionInfo['subscription'];
+    effectivePlan?: SubscriptionInfo['effectivePlan'];
+    quota?: SubscriptionInfo['quota'];
+    message?: string;
+    error?: string;
+  }>(response);
+
+  if (!response.ok || !data.user || !data.subscription || !data.effectivePlan || !data.quota) {
+    throw new Error(data.message ?? data.error ?? `Approve pro request failed (${response.status})`);
+  }
+
+  return {
+    user: data.user,
+    subscription: data.subscription,
+    effectivePlan: data.effectivePlan,
+    quota: data.quota,
+  };
+}
+
+export async function rejectAdminProRequest(
+  adminUserId: string,
+  transactionId: string
+): Promise<BillingTransaction> {
+  let response: Response;
+  try {
+    response = await fetch(
+      apiUrl(`/api/admin/pro-requests/${encodeURIComponent(transactionId)}/reject`),
       {
         method: 'POST',
         headers: adminHeaders(adminUserId),
@@ -155,13 +200,12 @@ export async function cancelAdminBillingTransaction(
 
   const data = await parseJson<{ transaction?: BillingTransaction; message?: string; error?: string }>(response);
   if (!response.ok || !data.transaction) {
-    throw new Error(data.message ?? data.error ?? `Cancel transaction failed (${response.status})`);
+    throw new Error(data.message ?? data.error ?? `Reject pro request failed (${response.status})`);
   }
   return data.transaction;
 }
 
-export interface AdminChangePlanResult {
-  user: AppUser;
+export interface AdminChangePlanResult {  user: AppUser;
   subscription: SubscriptionInfo['subscription'];
   effectivePlan: SubscriptionInfo['effectivePlan'];
   quota: SubscriptionInfo['quota'];

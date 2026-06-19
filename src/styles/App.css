@@ -2851,6 +2851,11 @@ html.tg-mini-app #root {
   background: rgba(125, 220, 150, 0.12);
 }
 
+.billing-status--paid_manual {
+  color: #7ddc96;
+  background: rgba(125, 220, 150, 0.12);
+}
+
 .billing-status--failed,
 .billing-status--cancelled {
   color: #ff8a84;
@@ -2910,6 +2915,82 @@ html.tg-mini-app #root {
 
 .admin-stats-grid--revenue {
   margin-bottom: var(--space-md);
+}
+
+.admin-stats-grid--requests {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: var(--space-lg);
+}
+
+.pro-request-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  width: 100%;
+}
+
+.pro-request-form__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.pro-request-form__desc {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--tg-hint);
+  text-align: center;
+}
+
+.pro-request-form__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.pro-request-form__field span {
+  color: var(--tg-hint);
+}
+
+.pro-request-form__field input,
+.pro-request-form__field textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--tg-separator);
+  border-radius: var(--radius-md);
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--field-text, #fff);
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.pro-request-form__field textarea {
+  resize: vertical;
+  min-height: 72px;
+}
+
+.pro-request-form__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.admin-pro-request-details {
+  margin-top: var(--space-md);
+  padding: var(--space-md);
+}
+
+.admin-pro-request-details__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.admin-pro-request-details__approve {
+  width: 100%;
 }
 
 .admin-stat-card--revenue {
@@ -3096,6 +3177,10 @@ html.tg-mini-app #root {
   }
 
   .admin-user-details__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-stats-grid--requests {
     grid-template-columns: 1fr;
   }
 

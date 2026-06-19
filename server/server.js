@@ -33,12 +33,14 @@ const { getSubscriptionForUser, changeSubscription } = require('./integrations/s
 const { assertOwnerAccess, listAdminUsers, getAdminStats, getUserAdminHistory, getUserAdminBilling, listProRequests } = require('./integrations/admin');
 const {
   createTransaction,
+  createProRequest,
   processFakePayment,
   getUserTransactions,
   getUserBillingSummary,
   getBillingStats,
   listAllTransactions,
   cancelTransaction,
+  approveProRequest,
 } = require('./integrations/billing');
 
 dotenv.config({ path: path.join(__dirname, '.env') });
@@ -330,6 +332,29 @@ app.post('/api/subscription/change', requireUserId, async (req, res) => {
   }
 });
 
+app.post('/api/billing/pro-request', requireUserId, async (req, res) => {
+  try {
+    const { name, username, contact, comment } = req.body ?? {};
+    const transaction = await createProRequest(req.userId, { name, username, contact, comment });
+    return jsonOk(res, { transaction });
+  } catch (error) {
+    console.error('[POST /api/billing/pro-request]', error);
+    const status =
+      error.code === 'user_not_found'
+        ? 404
+        : error.code === 'invalid_request' || error.code === 'invalid_plan'
+          ? 400
+          : error.code === 'already_subscribed'
+            ? 409
+            : error.code === 'forbidden'
+              ? 403
+              : error.code === 'not_configured'
+                ? 503
+                : 500;
+    return jsonError(res, status, error.code ?? 'billing_error', error.message ?? 'Failed to submit pro request');
+  }
+});
+
 app.post('/api/billing/checkout', requireUserId, async (req, res) => {
   console.log(
     `[AUDIT]\nroute=/api/billing/checkout\nuserId=${req.userId}\nbody=${JSON.stringify(req.body ?? {})}`
@@ -505,6 +530,50 @@ app.get('/api/admin/pro-requests', requireOwner, async (_req, res) => {
     console.error('[GET /api/admin/pro-requests]', error);
     const status = error.code === 'not_configured' ? 503 : 500;
     return jsonError(res, status, error.code ?? 'admin_error', error.message ?? 'Failed to load pro requests');
+  }
+});
+
+app.post('/api/admin/pro-requests/:transactionId/approve', requireOwner, async (req, res) => {
+  try {
+    const { transactionId } = req.params;
+    const result = await approveProRequest(transactionId);
+    return jsonOk(res, {
+      transaction: result.transaction,
+      user: result.subscription.user,
+      subscription: result.subscription.subscription,
+      effectivePlan: result.subscription.effectivePlan,
+      quota: result.subscription.quota,
+    });
+  } catch (error) {
+    console.error('[POST /api/admin/pro-requests/:transactionId/approve]', error);
+    const status =
+      error.code === 'transaction_not_found'
+        ? 404
+        : error.code === 'invalid_status' || error.code === 'invalid_plan'
+          ? 400
+          : error.code === 'not_configured'
+            ? 503
+            : 500;
+    return jsonError(res, status, error.code ?? 'billing_error', error.message ?? 'Failed to approve pro request');
+  }
+});
+
+app.post('/api/admin/pro-requests/:transactionId/reject', requireOwner, async (req, res) => {
+  try {
+    const { transactionId } = req.params;
+    const transaction = await cancelTransaction(transactionId);
+    return jsonOk(res, { transaction });
+  } catch (error) {
+    console.error('[POST /api/admin/pro-requests/:transactionId/reject]', error);
+    const status =
+      error.code === 'transaction_not_found'
+        ? 404
+        : error.code === 'invalid_status'
+          ? 400
+          : error.code === 'not_configured'
+            ? 503
+            : 500;
+    return jsonError(res, status, error.code ?? 'billing_error', error.message ?? 'Failed to reject pro request');
   }
 });
 

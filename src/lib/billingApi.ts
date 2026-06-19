@@ -6,11 +6,14 @@ import type {
   BillingSummary,
   BillingTransaction,
   BillingStatusFilter,
+  ProRequestPayload,
 } from '../types/billing';
 import { apiUrl, mapFetchError } from './api';
 
-export const BILLING_PENDING_MESSAGE =
-  'Оплата пока не подключена. Заявка на Pro создана. Администратор свяжется с вами для оплаты.';
+export const BILLING_REQUEST_SENT_MESSAGE =
+  'Заявка отправлена. Мы свяжемся с вами для оплаты.';
+
+export const BILLING_PENDING_MESSAGE = BILLING_REQUEST_SENT_MESSAGE;
 
 async function parseJson<T>(response: Response): Promise<T> {
   try {
@@ -87,6 +90,31 @@ export async function createBillingCheckout(
   return data.transaction;
 }
 
+export async function submitProRequest(
+  userId: string,
+  payload: ProRequestPayload
+): Promise<BillingTransaction> {
+  let response: Response;
+  try {
+    response = await fetch(apiUrl('/api/billing/pro-request'), {
+      method: 'POST',
+      headers: {
+        ...billingHeaders(userId),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+  } catch (e) {
+    throw mapFetchError(e);
+  }
+
+  const data = await parseJson<{ transaction?: BillingTransaction; message?: string; error?: string }>(response);
+  if (!response.ok || !data.transaction) {
+    throw new Error(data.message ?? data.error ?? `Pro request failed (${response.status})`);
+  }
+  return data.transaction;
+}
+
 export async function payBillingTransaction(
   userId: string,
   payload: BillingPayPayload
@@ -158,6 +186,7 @@ export function formatTransactionStatus(status: string): string {
   const map: Record<string, string> = {
     pending: 'Pending',
     paid: 'Paid',
+    paid_manual: 'Approved (Manual)',
     failed: 'Failed',
     cancelled: 'Cancelled',
     refunded: 'Refunded',

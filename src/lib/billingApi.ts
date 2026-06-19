@@ -10,6 +10,8 @@ import type {
 } from '../types/billing';
 import { apiUrl, mapFetchError } from './api';
 
+export const BILLING_PRO_REQUEST_PATH = '/api/billing/pro-request';
+
 export const BILLING_REQUEST_SENT_MESSAGE =
   'Заявка отправлена. Мы свяжемся с вами для оплаты.';
 
@@ -96,7 +98,7 @@ export async function submitProRequest(
 ): Promise<BillingTransaction> {
   let response: Response;
   try {
-    response = await fetch(apiUrl('/api/billing/pro-request'), {
+    response = await fetch(apiUrl(BILLING_PRO_REQUEST_PATH), {
       method: 'POST',
       headers: {
         ...billingHeaders(userId),

@@ -10,6 +10,7 @@ const { processTextRequest, processFileUpload } = require('./workflows/processor
 const { WorkflowStepError, WorkflowValidationError, requireWorkflow } = require('./utils/validators');
 const { buildExport } = require('./services/exportService');
 const { createCorsOptions, parseAllowedOrigins } = require('./config/cors');
+const { BILLING_PRO_REQUEST_PATH } = require('./config/billingRoutes');
 const { listWorkflowMetadata } = require('./workflows/metadata');
 const { exportToNotion, NotionExportError } = require('./integrations/notion');
 const { validateBitrixWebhook, exportToBitrix, createBitrixTasks, BitrixExportError } = require('./integrations/bitrix');
@@ -229,7 +230,31 @@ app.get('/api/health', (_req, res) => {
     supabaseConfigured: isSupabaseConfigured(),
     corsOrigins: parseAllowedOrigins(),
     workflows: Object.values(WORKFLOW_IDS),
+    billingProRequestRoute: BILLING_PRO_REQUEST_PATH,
   });
+});
+
+app.post(BILLING_PRO_REQUEST_PATH, requireUserId, async (req, res) => {
+  try {
+    const { name, username, contact, comment } = req.body ?? {};
+    const transaction = await createProRequest(req.userId, { name, username, contact, comment });
+    return jsonOk(res, { transaction });
+  } catch (error) {
+    console.error(`[POST ${BILLING_PRO_REQUEST_PATH}]`, error);
+    const status =
+      error.code === 'user_not_found'
+        ? 404
+        : error.code === 'invalid_request' || error.code === 'invalid_plan'
+          ? 400
+          : error.code === 'already_subscribed'
+            ? 409
+            : error.code === 'forbidden'
+              ? 403
+              : error.code === 'not_configured'
+                ? 503
+                : 500;
+    return jsonError(res, status, error.code ?? 'billing_error', error.message ?? 'Failed to submit pro request');
+  }
 });
 
 app.post('/api/auth/telegram', async (req, res) => {
@@ -329,29 +354,6 @@ app.post('/api/subscription/change', requireUserId, async (req, res) => {
             ? 503
             : 500;
     return jsonError(res, status, error.code ?? 'subscription_error', error.message ?? 'Failed to change subscription');
-  }
-});
-
-app.post('/api/billing/pro-request', requireUserId, async (req, res) => {
-  try {
-    const { name, username, contact, comment } = req.body ?? {};
-    const transaction = await createProRequest(req.userId, { name, username, contact, comment });
-    return jsonOk(res, { transaction });
-  } catch (error) {
-    console.error('[POST /api/billing/pro-request]', error);
-    const status =
-      error.code === 'user_not_found'
-        ? 404
-        : error.code === 'invalid_request' || error.code === 'invalid_plan'
-          ? 400
-          : error.code === 'already_subscribed'
-            ? 409
-            : error.code === 'forbidden'
-              ? 403
-              : error.code === 'not_configured'
-                ? 503
-                : 500;
-    return jsonError(res, status, error.code ?? 'billing_error', error.message ?? 'Failed to submit pro request');
   }
 });
 

@@ -1,7 +1,7 @@
 const { getSupabaseAdmin } = require('./supabase');
 const { getUserById } = require('./users');
 const { changeSubscription, getSubscriptionForUser } = require('./subscriptions');
-const { isOwnerUser } = require('./admin');
+const { isOwnerUser } = require('../lib/userRole');
 const {
   VALID_TRANSACTION_STATUSES,
   VALID_PROVIDERS,

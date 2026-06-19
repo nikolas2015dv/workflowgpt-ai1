@@ -1,6 +1,6 @@
 const { getSupabaseAdmin } = require('./supabase');
 const { getUserById } = require('./users');
-const { getOwnerTelegramId, resolveRole } = require('../lib/userRole');
+const { resolveRole, isOwnerUser } = require('../lib/userRole');
 const { getUserTransactions } = require('./billing');
 
 const USERS_TABLE = 'users';
@@ -17,13 +17,6 @@ function getClientOrThrow() {
     throw error;
   }
   return client;
-}
-
-function isOwnerUser(user) {
-  if (!user || user.role !== 'owner') return false;
-  const ownerTelegramId = getOwnerTelegramId();
-  if (ownerTelegramId == null) return user.role === 'owner';
-  return Number(user.telegram_id) === ownerTelegramId;
 }
 
 async function assertOwnerAccess(userId) {

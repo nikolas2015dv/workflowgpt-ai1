@@ -15,8 +15,16 @@ function resolveRole(telegramId, dbRole) {
   return VALID_ROLES.has(dbRole) ? dbRole : 'free';
 }
 
+function isOwnerUser(user) {
+  if (!user || user.role !== 'owner') return false;
+  const ownerTelegramId = getOwnerTelegramId();
+  if (ownerTelegramId == null) return user.role === 'owner';
+  return Number(user.telegram_id) === ownerTelegramId;
+}
+
 module.exports = {
   VALID_ROLES,
   getOwnerTelegramId,
   resolveRole,
+  isOwnerUser,
 };

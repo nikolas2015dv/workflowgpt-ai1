@@ -33,6 +33,14 @@ const {
 const { getSubscriptionForUser, changeSubscription } = require('./integrations/subscriptions');
 const { assertOwnerAccess, listAdminUsers, getAdminStats, getUserAdminHistory, getUserAdminBilling, listProRequests, getAdminAnalytics } = require('./integrations/admin');
 const {
+  isTelegramBotConfigured,
+  isWebAppUrlConfigured,
+  isWelcomeReady,
+  handleTelegramUpdate,
+  registerTelegramWebhookOnStartup,
+  verifyWebhookSecret,
+} = require('./integrations/telegramBot');
+const {
   createTransaction,
   createProRequest,
   processFakePayment,
@@ -228,10 +236,33 @@ app.get('/api/health', (_req, res) => {
     uptimeSeconds: Math.floor(process.uptime()),
     openaiConfigured: Boolean(process.env.OPENAI_API_KEY),
     supabaseConfigured: isSupabaseConfigured(),
+    telegramBotConfigured: isTelegramBotConfigured(),
+    webAppUrlConfigured: isWebAppUrlConfigured(),
     corsOrigins: parseAllowedOrigins(),
     workflows: Object.values(WORKFLOW_IDS),
     billingProRequestRoute: BILLING_PRO_REQUEST_PATH,
   });
+});
+
+app.post('/api/telegram/webhook', async (req, res) => {
+  if (!isTelegramBotConfigured()) {
+    return jsonError(res, 503, 'not_configured', 'Telegram bot is not configured');
+  }
+
+  if (!verifyWebhookSecret(req)) {
+    return jsonError(res, 401, 'unauthorized', 'Invalid Telegram webhook secret');
+  }
+
+  res.status(200).json({ ok: true });
+
+  try {
+    const result = await handleTelegramUpdate(req.body ?? {});
+    if (result.handled) {
+      console.log('[telegram] Update handled:', result.action);
+    }
+  } catch (error) {
+    console.error('[POST /api/telegram/webhook]', error);
+  }
 });
 
 app.post(BILLING_PRO_REQUEST_PATH, requireUserId, async (req, res) => {
@@ -1117,4 +1148,10 @@ app.use((err, _req, res, _next) => {
 app.listen(PORT, HOST, () => {
   console.log(`WorkflowGPT API listening on http://${HOST}:${PORT} (${NODE_ENV})`);
   console.log(`CORS origins: ${parseAllowedOrigins().join(', ')}`);
+  if (isWelcomeReady()) {
+    console.log('[telegram] Welcome message ready (/start)');
+  } else if (isTelegramBotConfigured()) {
+    console.log('[telegram] Bot token set — configure WEBAPP_URL for /start welcome');
+  }
+  void registerTelegramWebhookOnStartup();
 });

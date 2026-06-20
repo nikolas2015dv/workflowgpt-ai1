@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0a0a0c" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="description" content="WorkflowGPT Privacy Policy — как мы собираем, используем и защищаем ваши данные." />
+    <title>WorkflowGPT Privacy Policy</title>
+    <style>
+      :root {
+        --bg: #0a0a0c;
+        --surface: rgba(22, 22, 26, 0.72);
+        --surface-border: rgba(255, 255, 255, 0.1);
+        --text: #f5f5f7;
+        --hint: #8e8e93;
+        --link: #64b5ef;
+        --accent: #6ab2f2;
+        --separator: rgba(255, 255, 255, 0.08);
+        --radius: 16px;
+        --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, sans-serif;
+        --max-width: 720px;
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      html {
+        color-scheme: dark;
+        -webkit-text-size-adjust: 100%;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        font-family: var(--font);
+        font-size: 16px;
+        line-height: 1.6;
+        color: var(--text);
+        background:
+          radial-gradient(ellipse 80% 50% at 50% -20%, rgba(42, 171, 238, 0.12), transparent),
+          radial-gradient(ellipse 60% 40% at 100% 100%, rgba(106, 178, 242, 0.08), transparent),
+          var(--bg);
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .page {
+        max-width: var(--max-width);
+        margin: 0 auto;
+        padding: max(24px, env(safe-area-inset-top)) 20px max(32px, env(safe-area-inset-bottom));
+      }
+
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--surface-border);
+        border-radius: var(--radius);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        padding: 28px 24px;
+      }
+
+      @media (min-width: 640px) {
+        .page {
+          padding-top: 48px;
+          padding-bottom: 48px;
+        }
+
+        .card {
+          padding: 36px 40px;
+        }
+      }
+
+      .badge {
+        display: inline-block;
+        margin: 0 0 12px;
+        padding: 4px 10px;
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--accent);
+        background: rgba(106, 178, 242, 0.12);
+        border-radius: 999px;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: clamp(1.5rem, 4vw, 2rem);
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        line-height: 1.2;
+      }
+
+      .updated {
+        margin: 0 0 28px;
+        font-size: 14px;
+        color: var(--hint);
+      }
+
+      h2 {
+        margin: 28px 0 12px;
+        font-size: 1.125rem;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+      }
+
+      h2:first-of-type {
+        margin-top: 0;
+      }
+
+      p {
+        margin: 0 0 14px;
+        color: rgba(245, 245, 247, 0.92);
+      }
+
+      ul {
+        margin: 0 0 14px;
+        padding-left: 1.25rem;
+      }
+
+      li {
+        margin-bottom: 8px;
+        color: rgba(245, 245, 247, 0.92);
+      }
+
+      li::marker {
+        color: var(--accent);
+      }
+
+      a {
+        color: var(--link);
+        text-decoration: none;
+      }
+
+      a:hover {
+        text-decoration: underline;
+      }
+
+      .providers {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 12px 0 14px;
+        padding: 0;
+        list-style: none;
+      }
+
+      .providers li {
+        margin: 0;
+        padding: 6px 12px;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text);
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid var(--separator);
+        border-radius: 999px;
+      }
+
+      .contact-box {
+        margin-top: 8px;
+        padding: 16px 18px;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid var(--separator);
+        border-radius: 12px;
+      }
+
+      .contact-box p {
+        margin: 0;
+      }
+
+      .footer {
+        margin-top: 24px;
+        padding-top: 20px;
+        border-top: 1px solid var(--separator);
+        font-size: 13px;
+        color: var(--hint);
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <article class="card">
+        <p class="badge">Legal</p>
+        <h1>WorkflowGPT Privacy Policy</h1>
+        <p class="updated">Последнее обновление: 29 мая 2026</p>
+
+        <p>
+          Настоящая Политика конфиденциальности описывает, как сервис <strong>WorkflowGPT</strong>
+          (далее — «Сервис», «мы») собирает, использует и защищает персональные данные пользователей
+          Telegram Mini App.
+        </p>
+
+        <h2>1. Какие данные мы собираем</h2>
+        <p>При использовании WorkflowGPT мы можем обрабатывать следующие данные:</p>
+        <ul>
+          <li><strong>Telegram ID</strong> — уникальный идентификатор вашего аккаунта в Telegram;</li>
+          <li><strong>Username</strong> — имя пользователя в Telegram (если указано);</li>
+          <li><strong>Имя пользователя</strong> — имя и фамилия из профиля Telegram;</li>
+          <li>
+            <strong>История использования workflow</strong> — сведения о запусках инструментов,
+            сохранённых результатах и связанной активности в приложении;
+          </li>
+          <li>
+            <strong>Заявки на Pro</strong> — данные, которые вы указываете при оформлении заявки
+            (имя, контакт, комментарий и статус заявки);
+          </li>
+          <li>
+            <strong>Технические данные</strong> — IP-адрес, тип устройства, браузер, время запросов,
+            служебные логи и метаданные, необходимые для работы и безопасности Сервиса.
+          </li>
+        </ul>
+
+        <h2>2. Для чего используются данные</h2>
+        <p>Собранные данные используются исключительно для следующих целей:</p>
+        <ul>
+          <li><strong>Работа Mini App</strong> — авторизация, идентификация пользователя и доступ к функциям Сервиса;</li>
+          <li><strong>Хранение истории</strong> — сохранение результатов workflow и вашей активности для повторного просмотра;</li>
+          <li><strong>Обработка заявок на Pro</strong> — рассмотрение, одобрение или отклонение заявок на тариф Pro;</li>
+          <li><strong>Аналитика использования</strong> — понимание того, как пользователи взаимодействуют с Сервисом, для улучшения качества и стабильности продукта.</li>
+        </ul>
+
+        <h2>3. Передача данных третьим лицам</h2>
+        <p>
+          Мы <strong>не продаём</strong> ваши персональные данные и <strong>не передаём</strong> их
+          третьим лицам в маркетинговых или коммерческих целях.
+        </p>
+        <p>
+          Данные могут обрабатываться только инфраструктурными сервисами, необходимыми для работы
+          WorkflowGPT:
+        </p>
+        <ul class="providers">
+          <li>Supabase</li>
+          <li>Render</li>
+          <li>Vercel</li>
+          <li>OpenAI</li>
+        </ul>
+        <p>
+          Эти провайдеры получают доступ к данным только в объёме, необходимом для хранения,
+          хостинга, доставки приложения и обработки AI-запросов. Контент ваших документов и
+          запросов используется исключительно для выполнения анализа в рамках выбранного workflow.
+        </p>
+
+        <h2>4. Удаление данных</h2>
+        <p>
+          Вы можете запросить удаление своих персональных данных, связанных с аккаунтом WorkflowGPT.
+          Для этого напишите владельцу Сервиса на email, указанный ниже. Мы рассмотрим запрос
+          в разумный срок и удалим данные, если это не противоречит требованиям законодательства
+          или необходимости хранения служебной информации.
+        </p>
+
+        <h2>5. Контакт владельца</h2>
+        <div class="contact-box">
+          <p>
+            По вопросам конфиденциальности и удаления данных:<br />
+            <a href="mailto:nikolas2015dv@gmail.com">nikolas2015dv@gmail.com</a>
+          </p>
+        </div>
+
+        <p class="footer">© WorkflowGPT. Все права защищены.</p>
+      </article>
+    </main>
+  </body>
+</html>

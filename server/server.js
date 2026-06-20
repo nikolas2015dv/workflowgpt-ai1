@@ -31,7 +31,7 @@ const {
   isSupabaseConfigured: isUsersDbConfigured,
 } = require('./integrations/users');
 const { getSubscriptionForUser, changeSubscription } = require('./integrations/subscriptions');
-const { assertOwnerAccess, listAdminUsers, getAdminStats, getUserAdminHistory, getUserAdminBilling, listProRequests } = require('./integrations/admin');
+const { assertOwnerAccess, listAdminUsers, getAdminStats, getUserAdminHistory, getUserAdminBilling, listProRequests, getAdminAnalytics } = require('./integrations/admin');
 const {
   createTransaction,
   createProRequest,
@@ -595,6 +595,17 @@ app.post('/api/admin/billing/transactions/:transactionId/cancel', requireOwner, 
             ? 503
             : 500;
     return jsonError(res, status, error.code ?? 'billing_error', error.message ?? 'Failed to cancel transaction');
+  }
+});
+
+app.get('/api/admin/analytics', requireOwner, async (_req, res) => {
+  try {
+    const analytics = await getAdminAnalytics();
+    return jsonOk(res, analytics);
+  } catch (error) {
+    console.error('[GET /api/admin/analytics]', error);
+    const status = error.code === 'not_configured' ? 503 : 500;
+    return jsonError(res, status, error.code ?? 'admin_error', error.message ?? 'Failed to load analytics');
   }
 });
 

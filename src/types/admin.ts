@@ -58,3 +58,46 @@ export interface AdminProRequest {
   contact: string;
   comment: string;
 }
+
+export interface AdminAnalyticsPeriod {
+  newUsers: number;
+  proRequests: number;
+  approvedRequests: number;
+  workflowRuns: number;
+}
+
+export interface AdminTopWorkflow {
+  workflow_type: string;
+  totalRuns: number;
+  runsLast30Days: number;
+}
+
+export interface AdminAnalytics {
+  users: {
+    total: number;
+    free: number;
+    pro: number;
+    owner: number;
+  };
+  proRequests: {
+    total: number;
+    pending: number;
+    approved: number;
+    rejected: number;
+    last7Days: number;
+    last30Days: number;
+  };
+  conversion: {
+    freeToProRate: number;
+  };
+  workflows: {
+    totalRuns: number;
+    runsLast7Days: number;
+    runsLast30Days: number;
+    topWorkflows: AdminTopWorkflow[];
+  };
+  periods: {
+    last7Days: AdminAnalyticsPeriod;
+    last30Days: AdminAnalyticsPeriod;
+  };
+}

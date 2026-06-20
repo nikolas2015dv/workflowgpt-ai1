@@ -197,6 +197,128 @@ async function listProRequests() {
   });
 }
 
+function daysAgoIso(days) {
+  const date = new Date();
+  date.setDate(date.getDate() - days);
+  date.setHours(0, 0, 0, 0);
+  return date.toISOString();
+}
+
+function isProRequestRow(row) {
+  return Boolean(row.request_meta && typeof row.request_meta === 'object');
+}
+
+function countSince(rows, dateField, sinceIso) {
+  const since = new Date(sinceIso).getTime();
+  return rows.filter((row) => new Date(row[dateField]).getTime() >= since).length;
+}
+
+function buildPeriodStats({ users, proRequestRows, usageRows, sinceIso }) {
+  return {
+    newUsers: countSince(users, 'created_at', sinceIso),
+    proRequests: countSince(proRequestRows, 'created_at', sinceIso),
+    approvedRequests: proRequestRows.filter(
+      (row) => row.status === 'paid_manual' && new Date(row.updated_at ?? row.created_at).getTime() >= new Date(sinceIso).getTime()
+    ).length,
+    workflowRuns: countSince(usageRows, 'created_at', sinceIso),
+  };
+}
+
+function buildTopWorkflows(usageRows, sinceIso) {
+  const since = new Date(sinceIso).getTime();
+  const totals = new Map();
+
+  for (const row of usageRows) {
+    const type = String(row.workflow_type ?? 'unknown');
+    const entry = totals.get(type) ?? { workflow_type: type, totalRuns: 0, runsLast30Days: 0 };
+    entry.totalRuns += 1;
+    if (new Date(row.created_at).getTime() >= since) {
+      entry.runsLast30Days += 1;
+    }
+    totals.set(type, entry);
+  }
+
+  return Array.from(totals.values())
+    .sort((a, b) => b.totalRuns - a.totalRuns || b.runsLast30Days - a.runsLast30Days)
+    .slice(0, 10);
+}
+
+async function getAdminAnalytics() {
+  const client = getClientOrThrow();
+  const users = await listAdminUsers();
+
+  const freeUsers = users.filter((u) => u.plan === 'free').length;
+  const proUsers = users.filter((u) => u.plan === 'pro').length;
+  const ownerUsers = users.filter((u) => u.plan === 'owner').length;
+
+  const { data: proTransactions, error: proTxError } = await client
+    .from(TRANSACTIONS_TABLE)
+    .select('id, status, plan, created_at, updated_at, request_meta')
+    .eq('plan', 'pro');
+  if (proTxError) throw proTxError;
+
+  const proRequestRows = (proTransactions ?? []).filter(isProRequestRow);
+  const pendingRequests = proRequestRows.filter((row) => row.status === 'pending').length;
+  const approvedRequests = proRequestRows.filter((row) => row.status === 'paid_manual').length;
+  const rejectedRequests = proRequestRows.filter((row) => row.status === 'cancelled').length;
+
+  const since7 = daysAgoIso(7);
+  const since30 = daysAgoIso(30);
+
+  const { data: usageRows, error: usageError } = await client
+    .from(USAGE_TABLE)
+    .select('workflow_type, created_at');
+  if (usageError) throw usageError;
+
+  const usage = usageRows ?? [];
+  const totalRuns = usage.length;
+  const runsLast7Days = countSince(usage, 'created_at', since7);
+  const runsLast30Days = countSince(usage, 'created_at', since30);
+
+  const convertibleBase = freeUsers + proUsers;
+  const freeToProRate = convertibleBase > 0 ? Math.round((proUsers / convertibleBase) * 1000) / 10 : 0;
+
+  return {
+    users: {
+      total: users.length,
+      free: freeUsers,
+      pro: proUsers,
+      owner: ownerUsers,
+    },
+    proRequests: {
+      total: proRequestRows.length,
+      pending: pendingRequests,
+      approved: approvedRequests,
+      rejected: rejectedRequests,
+      last7Days: countSince(proRequestRows, 'created_at', since7),
+      last30Days: countSince(proRequestRows, 'created_at', since30),
+    },
+    conversion: {
+      freeToProRate,
+    },
+    workflows: {
+      totalRuns,
+      runsLast7Days,
+      runsLast30Days,
+      topWorkflows: buildTopWorkflows(usage, since30),
+    },
+    periods: {
+      last7Days: buildPeriodStats({
+        users,
+        proRequestRows,
+        usageRows: usage,
+        sinceIso: since7,
+      }),
+      last30Days: buildPeriodStats({
+        users,
+        proRequestRows,
+        usageRows: usage,
+        sinceIso: since30,
+      }),
+    },
+  };
+}
+
 module.exports = {
   isOwnerUser,
   assertOwnerAccess,
@@ -205,4 +327,5 @@ module.exports = {
   getUserAdminHistory,
   getUserAdminBilling,
   listProRequests,
+  getAdminAnalytics,
 };

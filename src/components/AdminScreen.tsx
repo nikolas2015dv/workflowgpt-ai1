@@ -4,6 +4,7 @@ import { useToast } from '../context/ToastContext';
 import {
   adminChangeUserPlan,
   approveAdminProRequest,
+  fetchAdminAnalytics,
   fetchAdminProRequests,
   fetchAdminStats,
   fetchAdminUsers,
@@ -17,14 +18,15 @@ import {
   formatTransactionStatus,
 } from '../lib/billingApi';
 import { formatRoleLabel } from '../lib/planLimits';
-import type { AdminPlanFilter, AdminProRequest, AdminStats, AdminUserRow } from '../types/admin';
+import type { AdminAnalytics, AdminPlanFilter, AdminProRequest, AdminStats, AdminUserRow } from '../types/admin';
 import type { BillingStats, BillingStatusFilter, BillingTransaction } from '../types/billing';
 import type { UserRole } from '../types/user';
 import { AdminUserDetailsPanel } from './AdminUserDetailsPanel';
 import { AdminProRequestDetails } from './AdminProRequestDetails';
+import { AdminAnalyticsPanel } from './AdminAnalyticsPanel';
 
 type LoadState = 'loading' | 'ready' | 'error';
-type AdminView = 'overview' | 'billing';
+type AdminView = 'overview' | 'billing' | 'analytics';
 
 const STATUS_FILTERS: BillingStatusFilter[] = ['all', 'paid', 'paid_manual', 'pending', 'failed', 'refunded', 'cancelled'];
 const PLAN_FILTERS: { id: AdminPlanFilter; label: string }[] = [
@@ -98,6 +100,7 @@ export const AdminScreen: React.FC = () => {
   const [billingStats, setBillingStats] = useState<BillingStats | null>(null);
   const [transactions, setTransactions] = useState<BillingTransaction[]>([]);
   const [proRequests, setProRequests] = useState<AdminProRequest[]>([]);
+  const [analytics, setAnalytics] = useState<AdminAnalytics | null>(null);
   const [statusFilter, setStatusFilter] = useState<BillingStatusFilter>('pending');
   const [searchQuery, setSearchQuery] = useState('');
   const [planFilter, setPlanFilter] = useState<AdminPlanFilter>('all');
@@ -135,6 +138,13 @@ export const AdminScreen: React.FC = () => {
     setUsers(nextUsers);
   }, [user?.id, isOwner, statusFilter]);
 
+  const loadAnalytics = useCallback(async () => {
+    if (!user?.id || !isOwner) return;
+
+    const nextAnalytics = await fetchAdminAnalytics(user.id);
+    setAnalytics(nextAnalytics);
+  }, [user?.id, isOwner]);
+
   const loadData = useCallback(async () => {
     if (!user?.id || !isOwner) return;
 
@@ -144,15 +154,17 @@ export const AdminScreen: React.FC = () => {
     try {
       if (view === 'overview') {
         await loadOverview();
-      } else {
+      } else if (view === 'billing') {
         await loadBilling();
+      } else {
+        await loadAnalytics();
       }
       setLoadState('ready');
     } catch (e) {
       setLoadState('error');
       setError(e instanceof Error ? e.message : 'Не удалось загрузить админку');
     }
-  }, [user?.id, isOwner, view, loadOverview, loadBilling]);
+  }, [user?.id, isOwner, view, loadOverview, loadBilling, loadAnalytics]);
 
   useEffect(() => {
     void loadData();
@@ -312,6 +324,13 @@ export const AdminScreen: React.FC = () => {
           onClick={() => setView('billing')}
         >
           Billing Management
+        </button>
+        <button
+          type="button"
+          className={`admin-subtabs__item${view === 'analytics' ? ' admin-subtabs__item--active' : ''}`}
+          onClick={() => setView('analytics')}
+        >
+          Analytics
         </button>
       </div>
 
@@ -587,6 +606,15 @@ export const AdminScreen: React.FC = () => {
             </div>
           )}
         </div>
+      )}
+
+      {view === 'analytics' && (
+        <AdminAnalyticsPanel
+          analytics={analytics}
+          loadState={loadState}
+          error={error}
+          onRetry={() => void loadData()}
+        />
       )}
     </section>
   );

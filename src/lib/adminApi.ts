@@ -1,4 +1,5 @@
 import type {
+  AdminAnalytics,
   AdminChangePlanPayload,
   AdminPlanFilter,
   AdminProRequest,
@@ -70,6 +71,24 @@ export async function fetchAdminStats(adminUserId: string): Promise<AdminStats> 
   const data = await parseJson<AdminStats & { message?: string; error?: string }>(response);
   if (!response.ok) {
     throw new Error(data.message ?? data.error ?? `Admin stats failed (${response.status})`);
+  }
+  return data;
+}
+
+export async function fetchAdminAnalytics(adminUserId: string): Promise<AdminAnalytics> {
+  let response: Response;
+  try {
+    response = await fetch(apiUrl('/api/admin/analytics'), {
+      method: 'GET',
+      headers: adminHeaders(adminUserId),
+    });
+  } catch (e) {
+    throw mapFetchError(e);
+  }
+
+  const data = await parseJson<AdminAnalytics & { message?: string; error?: string }>(response);
+  if (!response.ok) {
+    throw new Error(data.message ?? data.error ?? `Admin analytics failed (${response.status})`);
   }
   return data;
 }

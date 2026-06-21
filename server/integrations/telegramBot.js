@@ -135,7 +135,7 @@ function isStartCommand(text) {
 function isAppsVerifyCommand(text) {
   if (typeof text !== 'string') return false;
   const command = text.trim().split(/\s/)[0];
-  return command === '/apps_verify' || command.startsWith('/apps_verify@');
+  return command === '/appss_verify' || command.startsWith('/appss_verify@');
 }
 
 async function handleTelegramUpdate(update) {

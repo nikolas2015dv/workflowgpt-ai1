@@ -18,6 +18,8 @@ const WELCOME_CAPTION = `👋 Привет! Добро пожаловать в W
 
 🔒 Ваши данные используются только для анализа и не передаются третьим лицам.`;
 
+const APPS_VERIFY_RESPONSE = 'apps_f7a3f3';
+
 function getBotToken() {
   return String(process.env.TELEGRAM_BOT_TOKEN ?? '').trim();
 }
@@ -113,10 +115,27 @@ async function sendWelcomeMessage(chatId) {
   return callTelegramApi('sendPhoto', { method: 'POST', body: form });
 }
 
+async function sendTextMessage(chatId, text) {
+  return callTelegramApi('sendMessage', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text,
+    }),
+  });
+}
+
 function isStartCommand(text) {
   if (typeof text !== 'string') return false;
   const trimmed = text.trim();
   return trimmed === '/start' || trimmed.startsWith('/start ');
+}
+
+function isAppsVerifyCommand(text) {
+  if (typeof text !== 'string') return false;
+  const command = text.trim().split(/\s/)[0];
+  return command === '/apps_verify' || command.startsWith('/apps_verify@');
 }
 
 async function handleTelegramUpdate(update) {
@@ -126,8 +145,14 @@ async function handleTelegramUpdate(update) {
   }
 
   const text = message.text ?? '';
+
+  if (isAppsVerifyCommand(text)) {
+    await sendTextMessage(message.chat.id, APPS_VERIFY_RESPONSE);
+    return { handled: true, action: 'apps_verify_sent' };
+  }
+
   if (!isStartCommand(text)) {
-    return { handled: false, reason: 'not_start' };
+    return { handled: false, reason: 'unknown_command' };
   }
 
   await sendWelcomeMessage(message.chat.id);

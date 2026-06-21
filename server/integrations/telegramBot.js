@@ -18,7 +18,7 @@ const WELCOME_CAPTION = `👋 Привет! Добро пожаловать в W
 
 🔒 Ваши данные используются только для анализа и не передаются третьим лицам.`;
 
-const APPS_VERIFY_RESPONSE = 'apps_f7a3f3';
+const APPS_VERIFY_RESPONSE = 'appss_f7a3f3';
 
 function getBotToken() {
   return String(process.env.TELEGRAM_BOT_TOKEN ?? '').trim();
